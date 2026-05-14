@@ -1,0 +1,29 @@
+[mysqld]
+# Load-test oriented MySQL tuning for a single-node, disposable environment.
+# These values favor throughput over crash durability.
+
+# Avoid reverse DNS lookups on client connect/auth.
+skip-name-resolve
+
+# Use more RAM for hot InnoDB data/pages on this host.
+innodb_buffer_pool_size = 8G
+innodb_buffer_pool_instances = 8
+
+# Reduce checkpoint pressure for sustained write bursts.
+innodb_redo_log_capacity = 2G
+innodb_log_buffer_size = 64M
+
+# Relax durability for higher commit throughput in load tests.
+innodb_flush_log_at_trx_commit = 2
+sync_binlog = 0
+
+# Favor direct I/O for InnoDB data files.
+innodb_flush_method = O_DIRECT
+
+# Keep internal temporary tables in memory longer.
+tmp_table_size = 64M
+max_heap_table_size = 64M
+
+# Reuse server threads and reduce table open churn.
+thread_cache_size = 100
+table_open_cache = 4000

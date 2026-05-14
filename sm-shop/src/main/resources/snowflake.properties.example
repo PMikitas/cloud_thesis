@@ -1,0 +1,16 @@
+# Copy to snowflake.properties for local runs.
+# Keep snowflake.properties local and untracked.
+
+snowflake.tracing.enabled=false
+snowflake.url=https://your-account.region.cloud.snowflakecomputing.com
+snowflake.user=YOUR_SNOWFLAKE_USER
+snowflake.role=YOUR_SNOWFLAKE_ROLE
+snowflake.warehouse=YOUR_SNOWFLAKE_WAREHOUSE
+snowflake.database=YOUR_SNOWFLAKE_DATABASE
+snowflake.schema=PERFORMANCE_TRACKING
+snowflake.table=API_TRACKING
+snowflake.channel=shopizer_api_tracing_channel
+snowflake.client.name=SHOPIZER_API_TRACER
+snowflake.private.key.path=/secrets/snowflake/ecomm_sf_key.p8
+snowflake.private.key=
+snowflake.private.key.passphrase=

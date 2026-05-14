@@ -1,0 +1,118 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: shopizer-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_dev_pass}
+      MYSQL_DATABASE: SALESMANAGER
+      MYSQL_USER: ${MYSQL_USER:-shopizer}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-shopizer_dev_pass}
+    ports:
+      - "3306:3306"
+    volumes:
+      - shopizer-db-data:/var/lib/mysql
+      - ./mysql/conf.d:/etc/mysql/conf.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u $${MYSQL_USER:-shopizer} -p$${MYSQL_PASSWORD:-shopizer_dev_pass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  sm-shop:
+    build:
+      context: .
+      dockerfile: sm-shop/Dockerfile
+    container_name: sm-shop
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: mysql
+      GOOGLE_APPLICATION_CREDENTIALS: /gcp/adc.json
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-your-gcp-project-id}
+      JAVA_OPTS: >-
+        -Ddb.initialPoolSize=10
+        -Ddb.minPoolSize=20
+        -Ddb.maxPoolSize=60
+        -Ddb.connectionTimeout=10000
+        -Ddb.idleTimeout=600000
+        -Ddb.maxLifetime=1740000
+        -Ddb.validationTimeout=5000
+        -Ddb.leakDetectionThreshold=20000
+        -Dserver.tomcat.threads.max=80
+        -Dserver.tomcat.threads.min-spare=20
+        -Dserver.tomcat.accept-count=50
+        -Dlogging.level.com.zaxxer.hikari.HikariConfig=DEBUG
+#        -Dlogging.level.com.zaxxer.hikari=DEBUG
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/actuator/health | grep '\"UP\"' >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    volumes:
+      - ./sm-shop/files:/files
+      - ~/.config/gcloud/application_default_credentials.json:/gcp/adc.json:ro
+      - ${SNOWFLAKE_PRIVATE_KEY_MOUNT_SOURCE:-./secrets/ecomm_sf_key.p8}:/secrets/snowflake/ecomm_sf_key.p8:ro
+
+  setup-catalog:
+    profiles: ["seed", "loadtest"]
+    image: python:3.11-slim
+    depends_on:
+      db:
+        condition: service_healthy
+      sm-shop:
+        condition: service_healthy
+    working_dir: /workspace
+    restart: "no"
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      SHOPIZER_BASE_URL: http://sm-shop:8081
+      SHOPIZER_ADMIN_EMAIL: ${SHOPIZER_ADMIN_EMAIL:-admin@shopizer.com}
+      SHOPIZER_ADMIN_PASS: ${SHOPIZER_ADMIN_PASS:-password}
+      SHOPIZER_STORE_CODE: DEFAULT
+      SHOPIZER_LANG: en
+    command:
+      - python
+      - setup_catalog.py
+    volumes:
+      - .:/workspace
+
+  gatling:
+    profiles: ["loadtest"]
+    build:
+      context: ./shopizer-gatling
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+      sm-shop:
+        condition: service_healthy
+      setup-catalog:
+        condition: service_completed_successfully
+    working_dir: /app
+    restart: "no"
+    environment:
+      MAVEN_OPTS: -Xms512m -Xmx2g
+    command: >-
+      sh -c "sleep 10 &&
+      mvn gatling:test
+      -DsimulationClass=${GATLING_SIMULATION_CLASS:-simulations.UserActivitySimulation}
+      -DactivityUsers=${GATLING_ACTIVITY_USERS:-600}
+      -DsessionDurationSeconds=${GATLING_SESSION_DURATION_SECONDS:-21600}
+      -DrampSeconds=${GATLING_RAMP_SECONDS:-300}
+      -DbaseUrl=${GATLING_BASE_URL:-http://sm-shop:8081}
+      -DstoreCode=${GATLING_STORE_CODE:-DEFAULT}
+      -Dlang=${GATLING_LANG:-en}"
+    volumes:
+      - ./shopizer-gatling/results:/app/results
+      - gatling-m2:/root/.m2
+
+volumes:
+  shopizer-db-data:
+  gatling-m2:

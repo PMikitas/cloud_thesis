@@ -1,0 +1,104 @@
+{
+  "meta": {
+    "description": "Shopizer cloth store catalog — seeded for Gatling performance testing",
+    "baseUrl": "http://localhost:8081",
+    "apiBase": "http://localhost:8081/api/v1",
+    "store": "DEFAULT",
+    "adminEmail": "admin@shopizer.com",
+    "adminPassword": "password",
+    "loginEndpoint": "POST /api/v1/private/login"
+  },
+  "brands": [
+    { "id": 50, "code": "urbanthread",  "name": "UrbanThread" },
+    { "id": 51, "code": "nordstyle",    "name": "NordStyle" },
+    { "id": 52, "code": "velourex",     "name": "Velourex" },
+    { "id": 53, "code": "casualco",     "name": "CasualCo" },
+    { "id": 54, "code": "steetpeak",    "name": "SteetPeak" }
+  ],
+  "categories": {
+    "root": [
+      { "id": 1, "code": "men",         "name": "Men" },
+      { "id": 2, "code": "women",       "name": "Women" },
+      { "id": 3, "code": "accessories", "name": "Accessories" }
+    ],
+    "sub": [
+      { "id": 4,  "code": "men-tshirts",   "name": "T-Shirts",       "parentId": 1 },
+      { "id": 5,  "code": "men-jeans",     "name": "Jeans",           "parentId": 1 },
+      { "id": 6,  "code": "men-jackets",   "name": "Jackets",         "parentId": 1 },
+      { "id": 7,  "code": "men-hoodies",   "name": "Hoodies",         "parentId": 1 },
+      { "id": 8,  "code": "women-dresses", "name": "Dresses",         "parentId": 2 },
+      { "id": 9,  "code": "women-tops",    "name": "Tops",            "parentId": 2 },
+      { "id": 10, "code": "women-jeans",   "name": "Jeans",           "parentId": 2 },
+      { "id": 11, "code": "women-jackets", "name": "Jackets",         "parentId": 2 },
+      { "id": 12, "code": "bags",          "name": "Bags",            "parentId": 3 },
+      { "id": 13, "code": "hats",          "name": "Hats",            "parentId": 3 },
+      { "id": 14, "code": "belts",         "name": "Belts",           "parentId": 3 }
+    ]
+  },
+  "options": {
+    "size": {
+      "optionId": 1,
+      "code": "size",
+      "values": [
+        { "id": 1, "code": "size-xs", "label": "XS" },
+        { "id": 2, "code": "size-s",  "label": "S" },
+        { "id": 3, "code": "size-m",  "label": "M" },
+        { "id": 4, "code": "size-l",  "label": "L" },
+        { "id": 5, "code": "size-xl", "label": "XL" },
+        { "id": 6, "code": "size-xxl","label": "XXL" }
+      ]
+    },
+    "color": {
+      "optionId": 2,
+      "code": "color",
+      "values": [
+        { "id": 7,  "code": "color-black", "label": "Black" },
+        { "id": 8,  "code": "color-white", "label": "White" },
+        { "id": 9,  "code": "color-navy",  "label": "Navy" },
+        { "id": 10, "code": "color-grey",  "label": "Grey" },
+        { "id": 11, "code": "color-red",   "label": "Red" },
+        { "id": 12, "code": "color-green", "label": "Green" },
+        { "id": 13, "code": "color-beige", "label": "Beige" },
+        { "id": 14, "code": "color-denim", "label": "Denim" }
+      ]
+    }
+  },
+  "products": [
+    { "id": 1,  "sku": "test-product-01",  "name": "Test Tee (seed check)",    "price": 19.99, "categoryId": 4,  "brandId": 50 },
+    { "id": 2,  "sku": "mt-classic-crew",  "name": "Classic Crew Tee",          "price": 19.99, "categoryId": 4,  "brandId": 50 },
+    { "id": 3,  "sku": "mt-graphic-wolf",  "name": "Graphic Wolf Tee",          "price": 24.99, "categoryId": 4,  "brandId": 54 },
+    { "id": 4,  "sku": "mt-basic-stripe",  "name": "Basic Stripe Tee",          "price": 22.99, "categoryId": 4,  "brandId": 53 },
+    { "id": 5,  "sku": "mt-pocket-tee",    "name": "Pocket Tee",                "price": 18.99, "categoryId": 4,  "brandId": 52 },
+    { "id": 6,  "sku": "mj-slim-indigo",   "name": "Slim Indigo Jeans",         "price": 59.99, "categoryId": 5,  "brandId": 50 },
+    { "id": 7,  "sku": "mj-straight-raw",  "name": "Straight Raw Denim",        "price": 79.99, "categoryId": 5,  "brandId": 51 },
+    { "id": 8,  "sku": "mj-tapered-grey",  "name": "Tapered Grey Jeans",        "price": 64.99, "categoryId": 5,  "brandId": 53 },
+    { "id": 9,  "sku": "mjk-bomber-navy",  "name": "Navy Bomber Jacket",        "price": 99.99, "categoryId": 6,  "brandId": 50 },
+    { "id": 10, "sku": "mjk-denim-trucker","name": "Denim Trucker Jacket",      "price": 89.99, "categoryId": 6,  "brandId": 51 },
+    { "id": 11, "sku": "mh-zip-grey",      "name": "Zip-Up Hoodie Grey",        "price": 54.99, "categoryId": 7,  "brandId": 52 },
+    { "id": 12, "sku": "mh-pullover-black","name": "Pullover Hoodie Black",     "price": 49.99, "categoryId": 7,  "brandId": 54 },
+    { "id": 13, "sku": "wd-midi-floral",   "name": "Floral Midi Dress",         "price": 79.99, "categoryId": 8,  "brandId": 52 },
+    { "id": 14, "sku": "wd-wrap-beige",    "name": "Wrap Dress Beige",          "price": 84.99, "categoryId": 8,  "brandId": 51 },
+    { "id": 15, "sku": "wd-shirt-white",   "name": "White Shirt Dress",         "price": 74.99, "categoryId": 8,  "brandId": 50 },
+    { "id": 16, "sku": "wt-ribbed-tank",   "name": "Ribbed Tank Top",           "price": 24.99, "categoryId": 9,  "brandId": 53 },
+    { "id": 17, "sku": "wt-linen-blouse",  "name": "Linen Relaxed Blouse",      "price": 44.99, "categoryId": 9,  "brandId": 51 },
+    { "id": 18, "sku": "wj-highrise-mom",  "name": "High-Rise Mom Jeans",       "price": 64.99, "categoryId": 10, "brandId": 50 },
+    { "id": 19, "sku": "wj-skinny-black",  "name": "Skinny Black Jeans",        "price": 59.99, "categoryId": 10, "brandId": 54 },
+    { "id": 20, "sku": "ac-tote-canvas",   "name": "Canvas Tote Bag",           "price": 34.99, "categoryId": 12, "brandId": 52 },
+    { "id": 21, "sku": "ac-crossbody",     "name": "Crossbody Bag",             "price": 49.99, "categoryId": 12, "brandId": 53 },
+    { "id": 22, "sku": "ac-cap-black",     "name": "Classic Baseball Cap",      "price": 22.99, "categoryId": 13, "brandId": 54 },
+    { "id": 23, "sku": "ac-beanie-grey",   "name": "Ribbed Beanie Grey",        "price": 18.99, "categoryId": 13, "brandId": 51 },
+    { "id": 24, "sku": "ac-belt-leather",  "name": "Leather Pin Belt",          "price": 29.99, "categoryId": 14, "brandId": 50 }
+  ],
+  "usefulEndpoints": {
+    "listProducts":           "GET  /api/v1/products?page=0&count=100&lang=en",
+    "listProductsByCategory": "GET  /api/v1/products?category={categoryId}&page=0&count=20&lang=en",
+    "getProduct":             "GET  /api/v1/product/{friendlyUrl}?lang=en&store=DEFAULT",
+    "listCategories":         "GET  /api/v1/category?lang=en",
+    "listBrands":             "GET  /api/v1/manufacturers?page=0&count=20",
+    "searchProducts":         "GET  /api/v1/products?name={query}&page=0&count=20",
+    "adminLogin":             "POST /api/v1/private/login",
+    "createProduct":          "POST /api/v1/private/product",
+    "updateProduct":          "PUT  /api/v1/private/product/{id}",
+    "deleteProduct":          "DELETE /api/v1/private/product/{id}"
+  }
+}
