@@ -1,0 +1,26 @@
+# Copy to redshift.properties for local runs.
+# Keep redshift.properties local and untracked.
+
+redshift.jdbc.url=jdbc:redshift://your-redshift-endpoint.region.redshift-serverless.amazonaws.com:5439/dev
+redshift.user=YOUR_REDSHIFT_USER
+redshift.password=YOUR_REDSHIFT_PASSWORD
+redshift.schema=public
+redshift.table=api_performance
+
+redshift.tracing.datasource.driver-class-name=com.amazon.redshift.jdbc.Driver
+redshift.pool.size=2
+redshift.connection.timeout.ms=30000
+redshift.startup.max.wait.ms=60000
+redshift.startup.retry.delay.ms=1000
+redshift.startup.check.query=select 1
+redshift.startup.check.timeout.seconds=15
+redshift.driver.connect.timeout.seconds=5
+redshift.driver.login.timeout.seconds=15
+redshift.driver.socket.timeout.seconds=30
+redshift.driver.tcp.keepalive=true
+redshift.executor.threads=1
+redshift.batch.size=100
+redshift.multirow.insert.rows=500
+redshift.commit.every.flushes=1
+redshift.flush.interval.ms=250
+redshift.queue.capacity=20000

@@ -2,6 +2,9 @@ package com.salesmanager.shop.filter;
 
 import com.salesmanager.shop.store.api.tracing.ApiTraceEvent;
 import com.salesmanager.shop.store.api.tracing.BigQueryTracingService;
+import com.salesmanager.shop.store.api.tracing.RedshiftTracingService;
+import com.salesmanager.shop.store.api.tracing.SnowflakeTracingService;
+import com.salesmanager.shop.store.api.tracing.TracingDestinationConfig;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,13 +35,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Servlet filter that traces every API request to Google BigQuery.
+ * Servlet filter that traces every API request to external analytics sinks.
  *
  * Runs after XssFilter (Order 0) so the request is already sanitised.
  * Only intercepts paths that start with /api/ to avoid noise from static
  * resources and actuator endpoints.
  *
- * BigQuery table schema (table ID configured via bigquery.table.id):
+ * BigQuery / Redshift row schema:
  *   event_id       STRING   – unique trace event UUID
  *   request_id     STRING   – per-request UUID (or value of X-Request-Id header)
  *   event_timestamp TIMESTAMP – UTC timestamp of the request
@@ -66,6 +69,15 @@ public class ApiTracingFilter implements Filter {
 
     @Autowired
     private BigQueryTracingService bigQueryTracingService;
+
+    @Autowired
+    private RedshiftTracingService redshiftTracingService;
+
+    @Autowired
+    private SnowflakeTracingService snowflakeTracingService;
+
+    @Autowired
+    private TracingDestinationConfig tracingDestinationConfig;
 
     @Override
     public void init(FilterConfig filterConfig) throws ServletException {
@@ -108,7 +120,15 @@ public class ApiTracingFilter implements Filter {
                         .payload(extractPayload(wrappedRequest))
                         .build();
 
-                bigQueryTracingService.traceAsync(event);
+                if (tracingDestinationConfig.isApiEventDestinationEnabled("bigquery")) {
+                    bigQueryTracingService.traceAsync(event);
+                }
+                if (tracingDestinationConfig.isApiEventDestinationEnabled("redshift")) {
+                    redshiftTracingService.traceAsync(event);
+                }
+                if (tracingDestinationConfig.isApiEventDestinationEnabled("snowflake")) {
+                    snowflakeTracingService.traceAsync(event);
+                }
             } catch (Exception e) {
                 LOGGER.error("Failed to build or dispatch API trace event", e);
             }

@@ -2,8 +2,10 @@ package com.salesmanager.core.business.repositories.catalog.product;
 
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 import javax.persistence.EntityManager;
@@ -43,6 +45,60 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
 	@Override
 	public Product getById(Long productId) {
 		return get(productId, null);
+	}
+	
+	@Override
+	public Product getByIdForShoppingCart(Long productId, MerchantStore store, Language language) {
+
+		try {
+			StringBuilder qs = new StringBuilder();
+			qs.append("select distinct p from Product as p ");
+			qs.append("join fetch p.merchantStore pm ");
+			qs.append("join fetch p.descriptions pd ");
+			qs.append("left join fetch p.images images ");
+			qs.append("left join fetch p.availabilities pa ");
+			qs.append("left join fetch pa.prices pap ");
+			qs.append("left join fetch pap.descriptions papd ");
+			qs.append("left join fetch p.attributes pattr ");
+			qs.append("left join fetch p.variants pinst ");
+			qs.append("left join fetch pinst.availabilities pinsta ");
+			qs.append("left join fetch pinsta.prices pinstap ");
+			qs.append("left join fetch pinstap.descriptions pinstapdesc ");
+			qs.append("where p.id=:pid and pm.id=:mid ");
+			qs.append("and pd.language.id=:lang ");
+			qs.append("and (papd is null or papd.language.id=:lang) ");
+			qs.append("and (pinstapdesc is null or pinstapdesc.language.id=:lang)");
+
+			Query q = this.em.createQuery(qs.toString());
+			q.setParameter("pid", productId);
+			q.setParameter("mid", store.getId());
+			q.setParameter("lang", language.getId());
+
+			return (Product) q.getSingleResult();
+		} catch (javax.persistence.NoResultException ers) {
+			return null;
+		}
+	}
+	
+	@Override
+	public Product getByIdForInventory(Long productId, MerchantStore store) {
+		try {
+			StringBuilder qs = new StringBuilder();
+			qs.append("select distinct p from Product as p ");
+			qs.append("join fetch p.merchantStore pm ");
+			qs.append("left join fetch p.availabilities pa ");
+			qs.append("left join fetch p.variants pinst ");
+			qs.append("left join fetch pinst.availabilities pinsta ");
+			qs.append("where p.id=:pid and pm.id=:mid");
+
+			Query q = this.em.createQuery(qs.toString());
+			q.setParameter("pid", productId);
+			q.setParameter("mid", store.getId());
+
+			return (Product) q.getSingleResult();
+		} catch (javax.persistence.NoResultException ers) {
+			return null;
+		}
 	}
 
 
@@ -747,6 +803,20 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
 		if (count.intValue() == 0)
 			return productList;
 
+		if (canUseOptimizedShopListing(criteria)) {
+			List<Long> pageProductIds = listProductIdsByStore(store, language, criteria, count);
+			List<Product> optimizedProducts = fetchProductsForShopListing(pageProductIds, language);
+			if (!optimizedProducts.isEmpty() || pageProductIds.isEmpty()) {
+				productList.setProducts(optimizedProducts);
+				if (!optimizedProducts.isEmpty()) {
+					return productList;
+				}
+			}
+			LOGGER.warn(
+					"Optimized shop listing returned an empty page unexpectedly for store [{}], page [{}], count [{}]. Falling back to legacy listing query.",
+					store.getCode(), criteria.getStartPage(), criteria.getPageSize());
+		}
+
 		StringBuilder qs = new StringBuilder();
 		qs.append("select distinct p from Product as p ");
 		qs.append("join fetch p.merchantStore merch ");
@@ -968,6 +1038,183 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
 
 		return productList;
 
+	}
+
+	private boolean canUseOptimizedShopListing(ProductCriteria criteria) {
+		return ProductCriteria.ORIGIN_SHOP.equals(criteria.getOrigin())
+				&& CollectionUtils.isEmpty(criteria.getAttributeCriteria())
+				&& CollectionUtils.isEmpty(criteria.getOptionValueIds())
+				&& StringUtils.isBlank(criteria.getStatus())
+				&& criteria.getOwnerId() == null;
+	}
+
+	private List<Long> listProductIdsByStore(MerchantStore store, Language language, ProductCriteria criteria, Number count) {
+		StringBuilder qs = new StringBuilder();
+		qs.append("select distinct p.id, p.sortOrder from Product as p ");
+		qs.append(" inner join p.descriptions pd");
+
+		if (!CollectionUtils.isEmpty(criteria.getCategoryIds())) {
+			qs.append(" inner join p.categories categs");
+		}
+
+		if (criteria.getManufacturerId() != null) {
+			qs.append(" inner join p.manufacturer manuf");
+		}
+
+		qs.append(" where p.merchantStore.id=:mId");
+
+		if (criteria.getLanguage() != null && !criteria.getLanguage().equals("_all")) {
+			qs.append(" and pd.language.code=:lang");
+		}
+
+		if (!CollectionUtils.isEmpty(criteria.getProductIds())) {
+			qs.append(" and p.id in (:pId)");
+		}
+
+		if (!CollectionUtils.isEmpty(criteria.getCategoryIds())) {
+			qs.append(" and categs.id in (:cid)");
+		}
+
+		if (criteria.getManufacturerId() != null) {
+			qs.append(" and manuf.id = :manufid");
+		}
+
+		if (criteria.getAvailable() != null) {
+			if (criteria.getAvailable()) {
+				qs.append(" and p.available=true and p.dateAvailable<=:dt");
+			} else {
+				qs.append(" and (p.available=false or p.dateAvailable>:dt)");
+			}
+		}
+
+		if (!StringUtils.isBlank(criteria.getProductName())) {
+			qs.append(" and lower(pd.name) like :nm");
+		}
+
+		if (!StringUtils.isBlank(criteria.getCode())) {
+			qs.append(" and lower(p.sku) like :sku");
+		}
+
+		qs.append(" order by p.sortOrder asc");
+
+		Query q = this.em.createQuery(qs.toString());
+		q.setParameter("mId", store.getId());
+
+		if (criteria.getLanguage() != null && !criteria.getLanguage().equals("_all")) {
+			q.setParameter("lang", language.getCode());
+		}
+
+		if (!CollectionUtils.isEmpty(criteria.getCategoryIds())) {
+			q.setParameter("cid", criteria.getCategoryIds());
+		}
+
+		if (!CollectionUtils.isEmpty(criteria.getProductIds())) {
+			q.setParameter("pId", criteria.getProductIds());
+		}
+
+		if (criteria.getAvailable() != null) {
+			q.setParameter("dt", new Date());
+		}
+
+		if (criteria.getManufacturerId() != null) {
+			q.setParameter("manufid", criteria.getManufacturerId());
+		}
+
+		if (!StringUtils.isBlank(criteria.getCode())) {
+			q.setParameter("sku",
+					new StringBuilder().append("%").append(criteria.getCode().toLowerCase()).append("%").toString());
+		}
+
+		if (!StringUtils.isBlank(criteria.getProductName())) {
+			q.setParameter("nm", new StringBuilder().append("%").append(criteria.getProductName().toLowerCase())
+					.append("%").toString());
+		}
+
+	    @SuppressWarnings("rawtypes")
+	    GenericEntityList entityList = new GenericEntityList();
+	    entityList.setTotalCount(count.intValue());
+
+		q = RepositoryHelper.paginateQuery(q, count, entityList, criteria);
+
+		@SuppressWarnings("unchecked")
+		List<Object[]> rows = q.getResultList();
+		List<Long> productIds = new ArrayList<Long>(rows.size());
+		for (Object[] row : rows) {
+			productIds.add((Long) row[0]);
+		}
+		return productIds;
+	}
+
+	private List<Product> fetchProductsForShopListing(List<Long> pageProductIds, Language language) {
+		if (CollectionUtils.isEmpty(pageProductIds)) {
+			return new ArrayList<Product>();
+		}
+
+		StringBuilder qs = new StringBuilder();
+		qs.append("select distinct p from Product as p ");
+		qs.append("join fetch p.merchantStore merch ");
+		qs.append("join fetch p.descriptions pd ");
+		qs.append("left join fetch p.availabilities pa ");
+		qs.append("left join fetch pa.prices pap ");
+		qs.append("left join fetch pap.descriptions papd ");
+		qs.append("left join fetch p.categories categs ");
+		qs.append("left join fetch categs.descriptions cd ");
+		qs.append("left join fetch p.images images ");
+		qs.append("left join fetch p.manufacturer manuf ");
+		qs.append("left join fetch manuf.descriptions manufd ");
+		qs.append("left join fetch p.type type ");
+		qs.append("left join fetch type.descriptions typedesc ");
+		qs.append("left join fetch p.attributes pattr ");
+		qs.append("left join fetch pattr.productOption po ");
+		qs.append("left join fetch po.descriptions pod ");
+		qs.append("left join fetch pattr.productOptionValue pov ");
+		qs.append("left join fetch pov.descriptions povd ");
+		qs.append("left join fetch p.variants pinst ");
+		qs.append("left join fetch pinst.variation pv ");
+		qs.append("left join fetch pv.productOption pvpo ");
+		qs.append("left join fetch pv.productOptionValue pvpov ");
+		qs.append("left join fetch pvpo.descriptions pvpod ");
+		qs.append("left join fetch pvpov.descriptions pvpovd ");
+		qs.append("left join fetch pinst.variationValue pvv ");
+		qs.append("left join fetch pvv.productOption pvvpo ");
+		qs.append("left join fetch pvv.productOptionValue pvvpov ");
+		qs.append("left join fetch pvvpo.descriptions povvpod ");
+		qs.append("left join fetch pvvpov.descriptions povvpovd ");
+		qs.append("left join fetch pinst.availabilities pinsta ");
+		qs.append("left join fetch pinsta.prices pinstap ");
+		qs.append("left join fetch pinstap.descriptions pinstapdesc ");
+		qs.append("left join fetch pinst.productVariantGroup pinstg ");
+		qs.append("left join fetch pinstg.images pinstgimg ");
+		qs.append("where p.id in (:pId) ");
+		qs.append("and pd.language.code=:lang ");
+		qs.append("and (papd is null or papd.language.code=:lang) ");
+		qs.append("and (cd is null or cd.language.code=:lang) ");
+		qs.append("and (manufd is null or manufd.language.code=:lang) ");
+		qs.append("and (typedesc is null or typedesc.language.code=:lang) ");
+		qs.append("and (pod is null or pod.language.code=:lang) ");
+		qs.append("and (povd is null or povd.language.code=:lang) ");
+		qs.append("and (pvpod is null or pvpod.language.code=:lang) ");
+		qs.append("and (pvpovd is null or pvpovd.language.code=:lang) ");
+		qs.append("and (povvpod is null or povvpod.language.code=:lang) ");
+		qs.append("and (povvpovd is null or povvpovd.language.code=:lang) ");
+		qs.append("and (pinstapdesc is null or pinstapdesc.language.code=:lang) ");
+		qs.append("order by p.sortOrder asc");
+
+		Query q = this.em.createQuery(qs.toString());
+		q.setParameter("pId", pageProductIds);
+		q.setParameter("lang", language.getCode());
+
+		@SuppressWarnings("unchecked")
+		List<Product> products = q.getResultList();
+
+		Map<Long, Integer> ordering = new HashMap<Long, Integer>();
+		for (int index = 0; index < pageProductIds.size(); index++) {
+			ordering.put(pageProductIds.get(index), index);
+		}
+
+		products.sort((left, right) -> Integer.compare(ordering.get(left.getId()), ordering.get(right.getId())));
+
+		return products;
 	}
 
 	@Override

@@ -48,7 +48,7 @@ public class OrderTotalServiceImpl implements OrderTotalService {
 				List<ShoppingCartItem> items = summary.getProducts();
 				for(ShoppingCartItem item : items) {
 
-					Product product = productService.getBySku(item.getSku(), store, language);
+					Product product = productService.getBySkuForShoppingCart(item.getSku(), store, language);
 					//Product product = productService.getProductForLocale(productId, language, languageService.toLocale(language, store));
 					
 					OrderTotal orderTotal = module.caculateProductPiceVariation(summary, item, product, customer, store);

@@ -66,7 +66,10 @@ public class OrderProductPopulator extends
 
 		
 		try {
-			Product modelProduct = productService.getBySku(source.getSku(), store, language);
+			Product modelProduct = source.getProduct();
+			if(modelProduct == null || !source.getSku().equals(modelProduct.getSku())) {
+				modelProduct = productService.getBySkuForShoppingCart(source.getSku(), store, language);
+			}
 			if(modelProduct==null) {
 				throw new ConversionException("Cannot get product with sku " + source.getSku());
 			}
@@ -87,9 +90,9 @@ public class OrderProductPopulator extends
 			}
 
 			target.setOneTimeCharge(source.getItemPrice());	
-			target.setProductName(source.getProduct().getDescriptions().iterator().next().getName());
+			target.setProductName(modelProduct.getDescriptions().iterator().next().getName());
 			target.setProductQuantity(source.getQuantity());
-			target.setSku(source.getProduct().getSku());
+			target.setSku(modelProduct.getSku());
 			
 			FinalPrice finalPrice = source.getFinalPrice();
 			if(finalPrice==null) {

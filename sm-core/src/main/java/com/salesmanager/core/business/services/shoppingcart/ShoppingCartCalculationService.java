@@ -45,4 +45,33 @@ public interface ShoppingCartCalculationService {
 	 */
 	OrderTotalSummary calculate(final ShoppingCart cartModel, final MerchantStore store, final Language language)
 			throws ServiceException;
+
+	/**
+	 * Method which will be used to calculate price for each line items as well
+	 * Total and Sub-total for {@link ShoppingCart} without persisting the
+	 * recalculated cart state.
+	 * 
+	 * @param cartModel
+	 *            ShoopingCart mode representing underlying DB object
+	 * @param customer
+	 * @param store
+	 * @param language
+	 * @throws ServiceException
+	 */
+	OrderTotalSummary calculateReadOnly(final ShoppingCart cartModel, final Customer customer,
+			final MerchantStore store, final Language language) throws ServiceException;
+
+	/**
+	 * Method which will be used to calculate price for each line items as well
+	 * Total and Sub-total for {@link ShoppingCart} without persisting the
+	 * recalculated cart state.
+	 * 
+	 * @param cartModel
+	 *            ShoopingCart mode representing underlying DB object
+	 * @param store
+	 * @param language
+	 * @throws ServiceException
+	 */
+	OrderTotalSummary calculateReadOnly(final ShoppingCart cartModel, final MerchantStore store,
+			final Language language) throws ServiceException;
 }

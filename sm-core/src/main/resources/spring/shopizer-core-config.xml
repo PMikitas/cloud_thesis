@@ -70,6 +70,8 @@
 					<beans:value>classpath:email.properties</beans:value>
 					<beans:value>classpath:shopizer-core.properties</beans:value>
 					<beans:value>classpath:authentication.properties</beans:value>
+					<beans:value>classpath:snowflake.properties</beans:value>
+					<beans:value>classpath:redshift.properties</beans:value>
 				</beans:list>
 			</beans:property>
 		</beans:bean>
@@ -86,6 +88,8 @@
 					<beans:value>classpath:email.properties</beans:value>
 					<beans:value>classpath:shopizer-core.properties</beans:value>
 					<beans:value>classpath:authentication.properties</beans:value>
+					<beans:value>classpath:snowflake.properties</beans:value>
+					<beans:value>classpath:redshift.properties</beans:value>
 				</beans:list>
 			</beans:property>
 		</beans:bean>
@@ -103,6 +107,8 @@
 					<beans:value>classpath:profiles/gcp/shopizer-core.properties
 					</beans:value>
 					<beans:value>classpath:authentication.properties</beans:value>
+					<beans:value>classpath:snowflake.properties</beans:value>
+					<beans:value>classpath:redshift.properties</beans:value>
 				</beans:list>
 			</beans:property>
 		</beans:bean>
@@ -120,6 +126,8 @@
 					<beans:value>classpath:profiles/cloud/shopizer-core.properties
 					</beans:value>
 					<beans:value>classpath:authentication.properties</beans:value>
+					<beans:value>classpath:snowflake.properties</beans:value>
+					<beans:value>classpath:redshift.properties</beans:value>
 				</beans:list>
 			</beans:property>
 		</beans:bean>
@@ -136,6 +144,8 @@
 					<beans:value>classpath:email.properties</beans:value>
 					<beans:value>classpath:profiles/local/shopizer-core.properties</beans:value>
 					<beans:value>classpath:authentication.properties</beans:value>
+					<beans:value>classpath:snowflake.properties</beans:value>
+					<beans:value>classpath:redshift.properties</beans:value>
 				</beans:list>
 			</beans:property>
 		</beans:bean>
@@ -152,6 +162,8 @@
 					<beans:value>classpath:email.properties</beans:value>
 					<beans:value>classpath:profiles/mysql/shopizer-core.properties</beans:value>
 					<beans:value>classpath:authentication.properties</beans:value>
+					<beans:value>classpath:snowflake.properties</beans:value>
+					<beans:value>classpath:redshift.properties</beans:value>
 				</beans:list>
 			</beans:property>
 		</beans:bean>

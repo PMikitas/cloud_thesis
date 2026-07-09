@@ -65,6 +65,21 @@ public class DataConfiguration {
     @Value("${db.maxPoolSize}")
     private int maxPoolSize;
 
+    @Value("${db.connectionTimeout:10000}")
+    private long connectionTimeout;
+
+    @Value("${db.idleTimeout:600000}")
+    private long idleTimeout;
+
+    @Value("${db.maxLifetime:1740000}")
+    private long maxLifetime;
+
+    @Value("${db.validationTimeout:5000}")
+    private long validationTimeout;
+
+    @Value("${db.leakDetectionThreshold:0}")
+    private long leakDetectionThreshold;
+
     @Bean
     public HikariDataSource dataSource() {
     	HikariDataSource dataSource = DataSourceBuilder.create().type(HikariDataSource.class)
@@ -75,9 +90,16 @@ public class DataConfiguration {
     	.build();
     	
     	/** Datasource config **/
-    	dataSource.setIdleTimeout(minPoolSize);
+    	dataSource.setMinimumIdle(minPoolSize);
     	dataSource.setMaximumPoolSize(maxPoolSize);
+    	dataSource.setConnectionTimeout(connectionTimeout);
+    	dataSource.setIdleTimeout(idleTimeout);
+    	dataSource.setMaxLifetime(maxLifetime);
+    	dataSource.setValidationTimeout(validationTimeout);
     	dataSource.setConnectionTestQuery(testQuery);
+    	if (leakDetectionThreshold > 0) {
+    		dataSource.setLeakDetectionThreshold(leakDetectionThreshold);
+    	}
     	
     	return dataSource;
     }

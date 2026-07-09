@@ -189,7 +189,7 @@ public class ShoppingCartFacadeImpl implements ShoppingCartFacade {
 	private com.salesmanager.core.model.shoppingcart.ShoppingCartItem createCartItem(final ShoppingCart cartModel,
 			final ShoppingCartItem shoppingCartItem, final MerchantStore store) throws Exception {
 
-		Product product = productService.getBySku(shoppingCartItem.getSku(), store, store.getDefaultLanguage());
+		Product product = productService.getBySkuForShoppingCart(shoppingCartItem.getSku(), store, store.getDefaultLanguage());
 
 		if (product == null) {
 			throw new Exception("Item with sku " + shoppingCartItem.getSku() + " does not exist");
@@ -257,7 +257,7 @@ public class ShoppingCartFacadeImpl implements ShoppingCartFacade {
 		// USE Product sku
 		Product product = null;
 
-		product = productService.getBySku(shoppingCartItem.getProduct(), store, store.getDefaultLanguage());// todo use
+		product = productService.getBySkuForShoppingCart(shoppingCartItem.getProduct(), store, store.getDefaultLanguage());// todo use
 																											// language
 																											// from api
 																											// request
@@ -431,7 +431,7 @@ public class ShoppingCartFacadeImpl implements ShoppingCartFacade {
 
 	private Product fetchProduct(String sku, MerchantStore store, Language language) {
 		try {
-			return productService.getBySku(sku, store, language);
+			return productService.getBySkuForShoppingCart(sku, store, language);
 		} catch (ServiceException e) {
 			throw new ServiceRuntimeException(e);
 		}

@@ -256,7 +256,7 @@ public class ReadableShoppingCartMapper implements Mapper<ShoppingCart, Readable
 
 			// OrdetTotalSummary contains all calculations
 
-			OrderTotalSummary orderSummary = shoppingCartCalculationService.calculate(source, store, language);
+			OrderTotalSummary orderSummary = shoppingCartCalculationService.calculateReadOnly(source, store, language);
 
 			if (CollectionUtils.isNotEmpty(orderSummary.getTotals())) {
 

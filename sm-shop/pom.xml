@@ -155,6 +155,30 @@
 			</exclusions>
 		</dependency>
 
+		<!-- Snowflake SnowPipe Streaming - API activity tracing (Snowflake sink) -->
+		<dependency>
+			<groupId>net.snowflake</groupId>
+			<artifactId>snowflake-ingest-sdk</artifactId>
+			<version>2.0.5</version>
+			<exclusions>
+				<exclusion>
+					<groupId>com.google.guava</groupId>
+					<artifactId>guava</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>org.slf4j</groupId>
+					<artifactId>slf4j-api</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+
+		<!-- Amazon Redshift JDBC - API activity tracing (Redshift sink) -->
+		<dependency>
+			<groupId>com.amazon.redshift</groupId>
+			<artifactId>redshift-jdbc42</artifactId>
+			<version>2.1.0.32</version>
+		</dependency>
+
 	</dependencies>
 
 	<build>

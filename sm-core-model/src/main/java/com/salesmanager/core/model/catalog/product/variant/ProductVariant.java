@@ -37,7 +37,10 @@ import com.salesmanager.core.model.generic.SalesManagerEntity;
 @Entity
 @EntityListeners(value = AuditListener.class)
 @Table(name = "PRODUCT_VARIANT",
-indexes = @Index(columnList = "PRODUCT_ID"),
+indexes = {
+		@Index(columnList = "PRODUCT_ID"),
+		@Index(columnList = "SKU")
+},
 uniqueConstraints = 
         @UniqueConstraint(columnNames = { 
         "PRODUCT_ID",

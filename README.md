@@ -1,148 +1,180 @@
-# Shopizer 3 (for java 17 +) (tested with Java 11, 17)
+# Shopizer Cloud Warehouse Benchmark
 
-3.2.7
+This repository contains a Shopizer 3.2.7 based e-commerce backend extended for
+cloud warehouse benchmarking. It combines:
 
+- the Shopizer API and MySQL source database
+- API event tracing into BigQuery, Snowflake, and Redshift
+- operational table migration from MySQL into warehouse tables
+- scheduled analytical metrics from `metrics_scripts.sql`
+- Gatling load generation for repeatable user activity
 
+The repository is meant to be run locally with Docker Compose and configured
+with local-only credential files. See [CREDENTIALS.md](CREDENTIALS.md) before
+starting anything that talks to cloud services.
 
-[![last_version](https://img.shields.io/badge/last_version-v3.2.7-blue.svg?style=flat)](https://github.com/shopizer-ecommerce/shopizer/tree/3.2.7)
-[![Official site](https://img.shields.io/website-up-down-green-red/https/shields.io.svg?label=official%20site)](http://www.shopizer.com/)
-[![Docker Pulls](https://img.shields.io/docker/pulls/shopizerecomm/shopizer.svg)](https://hub.docker.com/r/shopizerecomm/shopizer)
-[![stackoverflow](https://img.shields.io/badge/shopizer-stackoverflow-orange.svg?style=flat)](http://stackoverflow.com/questions/tagged/shopizer)
-[![CircleCI](https://circleci.com/gh/shopizer-ecommerce/shopizer.svg?style=svg)](https://circleci.com/gh/shopizer-ecommerce/shopizer)
+## Repository Layout
 
+- `docker-compose.yml`: Shopizer, MySQL, catalog seeding, and Gatling load tests.
+- `sm-shop/`: Shopizer API service plus tracing sinks.
+- `data-migration-scripts/`: MySQL operational table refresh into warehouses.
+- `metrics-scheduler/`: scheduled runner for analytical SQL metrics.
+- `metrics_scripts.sql`: business and behavioral analytics queries.
+- `shopizer-gatling/`: Gatling simulations used to generate API traffic.
+- `mysql/conf.d/`: MySQL tuning used by the local benchmark database.
 
-Java open source e-commerce software
+## Prerequisites
 
-Headless commerce and Rest api for ecommerce
+- Docker Desktop or Docker Engine with Compose v2.
+- A local `.env` copied from `.env.example`.
+- Local credential files described in [CREDENTIALS.md](CREDENTIALS.md).
+- Optional: `gcloud` CLI if you use BigQuery with application-default credentials.
 
-- Catalog
-- Shopping cart
-- Checkout
-- Merchant
-- Order
-- Customer
-- User
+## 1. Prepare Local Config
 
-Shopizer Headless commerce consists of the following components:
-
-
-Access the headless api: http://localhost:8080/swagger-ui.html
-
-
-See the demo: [**New demo on the way 2025]
--------------------
-Headless demo Available soon
-
-1.  Run from Docker images:
-
-From the command line:
-
-```
-docker run -p 8080:8080 shopizerecomm/shopizer:latest
-```
-       
-2. Run the administration tool
-
-⋅⋅⋅ Requires the java backend to be running
-
-```
-docker run \
- -e "APP_BASE_URL=http://localhost:8080/api" \
- -p 82:80 shopizerecomm/shopizer-admin
+```bash
+cp .env.example .env
+cp sm-shop/src/main/resources/snowflake.properties.example sm-shop/src/main/resources/snowflake.properties
+cp sm-shop/src/main/resources/redshift.properties.example sm-shop/src/main/resources/redshift.properties
+mkdir -p secrets
+touch secrets/ecomm_sf_key.p8
 ```
 
+Edit the copied files with your local credentials. Edit `tracing.env` to choose
+which cloud solutions receive API events and migration/metrics jobs.
 
-3. Run react shop sample site
+## 2. Start Shopizer And MySQL
 
-⋅⋅⋅ Requires the java backend to be running
-
-```
-docker run \
- -e "APP_MERCHANT=DEFAULT"
- -e "APP_BASE_URL=http://localhost:8080"
- -p 80:80 shopizerecomm/shopizer-shop-reactjs
+```bash
+docker compose up --build -d db sm-shop
 ```
 
-API documentation:
--------------------
+Check that the API is healthy:
 
+```bash
+curl http://localhost:8081/actuator/health
+```
 
-Get the source code:
--------------------
-Clone the repository:
-     
-	 $ git clone git://github.com/shopizer-ecommerce/shopizer.git
-	 
+Useful logs:
 
-To build the application:
--------------------
+```bash
+docker compose logs -f sm-shop
+```
 
-1. Shopizer backend
+## 3. Seed The Catalog
 
+The seed step inserts the catalog used by the Gatling simulations.
 
-From the command line:
+```bash
+docker compose --profile seed up --build setup-catalog
+```
 
-	$ cd shopizer
-	$ mvnw clean install
-	$ cd sm-shop
-	$ mvnw spring-boot:run
+## 4. Generate Load With Gatling
 
-2. Shopizer admin
+Run the default user activity simulation:
 
-Form compiling and running Shopizer admin consult the repo README file
+```bash
+docker compose --profile loadtest up --build gatling
+```
 
-3. Shop sample site
+Override simulation parameters from `.env`, for example:
 
-Form compiling and running Shopizer admin consult the repo README file
+```text
+GATLING_ACTIVITY_USERS=600
+GATLING_SESSION_DURATION_SECONDS=21600
+GATLING_RAMP_SECONDS=300
+```
 
+Generated Gatling reports are written under `shopizer-gatling/results/` and are
+ignored by Git.
 
-### Access the application:
--------------------
+## 5. Run Operational Table Migration
 
-Access the headless web application at: http://localhost:8080/swagger-ui.html
+The migration bridge copies selected operational MySQL tables into BigQuery,
+Snowflake, and optionally Redshift.
 
+```bash
+cd data-migration-scripts
+cp .env.example .env
+```
 
-The instructions above will let you run the application with default settings and configurations.
-Please read the instructions on how to connect to MySQL, configure an email server and configure other subsystems
+Edit `data-migration-scripts/.env`, then start the cron runner:
 
+```bash
+docker compose up --build -d migration-cron
+```
 
-### Documentation:
--------------------
+Run one refresh manually:
 
-Documentation available [<https://shopizer-ecommerce.github.io/documentation/>](http://localhost:8080/swagger-ui/index.html)
+```bash
+docker compose run --rm migration-cron run-once --destinations bigquery snowflake
+```
 
-ChatOps <https://shopizer.slack.com>  - Join our Slack channel <https://communityinviter.com/apps/shopizer/shopizer>
+The migration compose file joins the Shopizer Docker network. The root `.env`
+sets `COMPOSE_PROJECT_NAME=shopizer`, so the expected network is
+`shopizer_default`.
 
-More information is available on shopizer web site here <http://www.shopizer.com>
+## 6. Run Metrics Scheduler
 
-### Participation:
--------------------
+The metrics scheduler executes the query groups defined in
+`metrics-scheduler/src/metrics_scheduler/run_metrics.py` against the SQL in
+`metrics_scripts.sql`.
 
-If you have interest in giving feedback or for participating to Shopizer project in any way
-Feel to use the contact form <http://www.shopizer.com/contact.html> and share your email address
-so we can send an invite to our Slack channel
+```bash
+cd metrics-scheduler
+cp .env.example .env
+```
 
-### How to Contribute:
--------------------
-Fork the repository to your GitHub account
+Edit `metrics-scheduler/.env`, then start scheduled execution:
 
-Clone from fork repository
--------------------
+```bash
+docker compose up --build -d metrics-cron
+```
 
-       $ git clone https://github.com/yourusername/shopizer.git
+Run a single group manually:
 
-Build application according to steps provided above
+```bash
+docker compose run --rm metrics-cron run-once --group operational_dashboard
+```
 
+Run a single group for one warehouse:
 
-Create new branch in your repository
--------------------
+```bash
+docker compose run --rm metrics-cron run-once --group operational_dashboard --warehouses bigquery
+```
 
-	   $ git checkout -b branch-name
+Metric outputs are written under `metrics-scheduler/results/` and are ignored by
+Git.
 
+## 7. Stop Services
 
-Push your changes to Shopizer
--------------------
+From the repository root:
 
-Please open a PR (pull request) in order to have your changes merged to the upstream
+```bash
+docker compose down
+```
 
+From each subproject if those schedulers are running:
 
+```bash
+cd data-migration-scripts && docker compose down
+cd ../metrics-scheduler && docker compose down
+```
+
+To remove local Docker volumes as well:
+
+```bash
+docker compose down -v
+```
+
+## Notes For The Thesis Setup
+
+- API tracing creates event-level behavioral data.
+- The migration bridge creates operational mirror tables for dashboard queries.
+- The metrics scheduler records result files and metadata such as runtime,
+  latency, data volume, and result size.
+- Gatling generates realistic API traffic so the behavioral queries have
+  session and endpoint data to analyze.
+
+Generated result data, local pipeline state, credentials, keys, IDE files, and
+virtual environments are intentionally ignored by Git.

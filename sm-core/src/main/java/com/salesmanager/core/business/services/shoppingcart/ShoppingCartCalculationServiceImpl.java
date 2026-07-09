@@ -66,14 +66,21 @@ public class ShoppingCartCalculationServiceImpl implements ShoppingCartCalculati
 	public OrderTotalSummary calculate(final ShoppingCart cartModel, final Customer customer, final MerchantStore store,
 			final Language language) throws ServiceException {
 
+		OrderTotalSummary orderTotalSummary = calculateReadOnly(cartModel, customer, store, language);
+		updateCartModel(cartModel);
+		return orderTotalSummary;
+
+	}
+
+	@Override
+	public OrderTotalSummary calculateReadOnly(final ShoppingCart cartModel, final Customer customer,
+			final MerchantStore store, final Language language) throws ServiceException {
+
 		Validate.notNull(cartModel, "cart cannot be null");
 		Validate.notNull(cartModel.getLineItems(), "Cart should have line items.");
 		Validate.notNull(store, "MerchantStore cannot be null");
 		Validate.notNull(customer, "Customer cannot be null");
-		OrderTotalSummary orderTotalSummary = orderService.calculateShoppingCartTotal(cartModel, customer, store,
-				language);
-		updateCartModel(cartModel);
-		return orderTotalSummary;
+		return orderService.calculateShoppingCartTotal(cartModel, customer, store, language);
 
 	}
 
@@ -101,12 +108,20 @@ public class ShoppingCartCalculationServiceImpl implements ShoppingCartCalculati
 	public OrderTotalSummary calculate(final ShoppingCart cartModel, final MerchantStore store, final Language language)
 			throws ServiceException {
 
+		OrderTotalSummary orderTotalSummary = calculateReadOnly(cartModel, store, language);
+		updateCartModel(cartModel);
+		return orderTotalSummary;
+
+	}
+
+	@Override
+	public OrderTotalSummary calculateReadOnly(final ShoppingCart cartModel, final MerchantStore store,
+			final Language language) throws ServiceException {
+
 		Validate.notNull(cartModel, "cart cannot be null");
 		Validate.notNull(cartModel.getLineItems(), "Cart should have line items.");
 		Validate.notNull(store, "MerchantStore cannot be null");
-		OrderTotalSummary orderTotalSummary = orderService.calculateShoppingCartTotal(cartModel, store, language);
-		updateCartModel(cartModel);
-		return orderTotalSummary;
+		return orderService.calculateShoppingCartTotal(cartModel, store, language);
 
 	}
 

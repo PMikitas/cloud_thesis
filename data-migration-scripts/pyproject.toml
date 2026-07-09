@@ -1,0 +1,37 @@
+[project]
+name = "data-migration-scripts"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "vegura",email = "annadominie@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.11,<3.15"
+dependencies = [
+    "pandas (>=3.0.2,<4.0.0)",
+    "jupyterlab (>=4.5.6,<5.0.0)",
+    "dlt[snowflake] (>=1.26.0,<2.0.0)",
+    "dlt[bigquery] (>=1.26.0,<2.0.0)",
+    "dlt[redshift] (>=1.26.0,<2.0.0)",
+    "sqlalchemy (>=2.0.49,<3.0.0)",
+    "databases (>=0.9.0,<0.10.0)",
+    "pymysql[rsa] (>=1.1.2,<2.0.0)",
+    "cryptography (>=46.0.7,<47.0.0)",
+    "google-auth (>=2.49.2,<3.0.0)",
+    "google-cloud-bigquery-storage (>=2.37.0,<3.0.0)",
+    "apscheduler (>=3.10.4,<4.0.0)"
+]
+
+[project.scripts]
+mysql-migration = "data_migration_scripts.mysql2bq_tables_migration:main"
+mysql-migration-scheduler = "data_migration_scripts.scheduler:main"
+operational-tables-migration = "data_migration_scripts.operational_tables_migration:main"
+operational-tables-migration-scheduler = "data_migration_scripts.scheduler:main"
+
+[tool.poetry]
+packages = [{include = "data_migration_scripts", from = "src"}]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

@@ -8,6 +8,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -187,17 +188,18 @@ public class OrderServiceImpl  extends SalesManagerEntityServiceImpl<Long, Order
     		}
     	}
 
-        /**
-         * decrement inventory
-         */
-    	LOGGER.debug( "Update inventory" );
-        Set<OrderProduct> products = order.getOrderProducts();
-        for(OrderProduct orderProduct : products) {
-            orderProduct.getProductQuantity();
-            Product p = productService.getById(orderProduct.getId());
-            if(p == null)
-                throw new ServiceException(ServiceException.EXCEPTION_INVENTORY_MISMATCH);
-            for(ProductAvailability availability : p.getAvailabilities()) {
+	        /**
+	         * decrement inventory
+	         */
+	    	LOGGER.debug( "Update inventory" );
+	        List<OrderProduct> products = new ArrayList<>(order.getOrderProducts());
+	        products.sort(Comparator.comparing(OrderProduct::getSku, Comparator.nullsLast(String::compareTo)));
+	        for(OrderProduct orderProduct : products) {
+	            orderProduct.getProductQuantity();
+	            Product p = productService.getBySkuForInventory(orderProduct.getSku(), store);
+	            if(p == null)
+	                throw new ServiceException(ServiceException.EXCEPTION_INVENTORY_MISMATCH);
+	            for(ProductAvailability availability : p.getAvailabilities()) {
                 int qty = availability.getProductQuantity();
                 if(qty < orderProduct.getProductQuantity()) {
                     //throw new ServiceException(ServiceException.EXCEPTION_INVENTORY_MISMATCH);

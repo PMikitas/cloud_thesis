@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!--
+    Standalone Gatling performance-test module for Shopizer.
+    Intentionally NOT listed as a <module> in the parent pom.xml so that
+    running `mvn test` on the main project never triggers load tests.
+
+    Run a simulation:
+      mvn gatling:test                            (default: FullLoadSimulation)
+      mvn gatling:test -Dgatling.simulationClass=simulations.BrowsingSimulation
+      mvn gatling:test -DbaseUrl=http://staging:8080 -DbrowseUsers=100 -DtestDuration=300
+  -->
+
+  <groupId>com.shopizer</groupId>
+  <artifactId>shopizer-gatling</artifactId>
+  <version>1.0.0</version>
+
+  <description>Standalone Gatling performance tests for the Shopizer e-commerce REST API</description>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <gatling.version>3.9.5</gatling.version>
+    <gatling-maven-plugin.version>4.6.0</gatling-maven-plugin.version>
+    <simulationClass>simulations.FullLoadSimulation</simulationClass>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.gatling.highcharts</groupId>
+      <artifactId>gatling-charts-highcharts</artifactId>
+      <version>${gatling.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Compiles Scala simulation sources in src/test/scala -->
+      <plugin>
+        <groupId>net.alchim31.maven</groupId>
+        <artifactId>scala-maven-plugin</artifactId>
+        <version>4.8.1</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>testCompile</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <args>
+            <arg>-target:jvm-11</arg>
+            <arg>-deprecation</arg>
+            <arg>-feature</arg>
+            <arg>-unchecked</arg>
+            <arg>-language:implicitConversions</arg>
+            <arg>-language:postfixOps</arg>
+          </args>
+          <jvmArgs>
+            <jvmArg>-Xss100M</jvmArg>
+          </jvmArgs>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>io.gatling</groupId>
+        <artifactId>gatling-maven-plugin</artifactId>
+        <version>${gatling-maven-plugin.version}</version>
+        <configuration>
+          <!-- Default simulation; override with -DsimulationClass=... -->
+          <simulationClass>${simulationClass}</simulationClass>
+          <!-- Reports land in shopizer-gatling/results/ so they survive mvn clean -->
+          <resultsFolder>${project.basedir}/results</resultsFolder>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

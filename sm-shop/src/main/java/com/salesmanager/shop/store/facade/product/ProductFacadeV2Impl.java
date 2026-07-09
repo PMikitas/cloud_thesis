@@ -1,7 +1,6 @@
 package com.salesmanager.shop.store.facade.product;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -195,7 +194,7 @@ public class ProductFacadeV2Impl implements ProductFacade {
 		 */
 		
 		List<ReadableProduct> readableProducts = products.stream().map(p -> readableProductMapper.convert(p, store, language))
-				.sorted(Comparator.comparing(ReadableProduct::getSortOrder)).collect(Collectors.toList());
+				.collect(Collectors.toList());
 
 
 		productList.setRecordsTotal(modelProductList.getTotalElements());

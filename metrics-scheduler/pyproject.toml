@@ -1,0 +1,24 @@
+[project]
+name = "metrics-scheduler"
+version = "0.1.0"
+description = "Scheduled execution of warehouse metrics queries for Shopizer."
+readme = "README.md"
+requires-python = ">=3.11,<3.15"
+dependencies = [
+    "pandas>=2.2.3,<3.0.0",
+    "psycopg2-binary>=2.9.10,<3.0.0",
+    "snowflake-connector-python>=4.4.0,<5.0.0",
+    "google-auth>=2.49.2,<3.0.0",
+    "google-cloud-bigquery>=3.38.0,<4.0.0",
+    "cryptography>=46.0.0,<47.0.0"
+]
+
+[project.scripts]
+metrics-runner = "metrics_scheduler.run_metrics:main"
+
+[tool.poetry]
+packages = [{include = "metrics_scheduler", from = "src"}]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

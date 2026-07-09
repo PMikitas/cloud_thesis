@@ -1,0 +1,83 @@
+services:
+  # System-cron-style scheduler (supercronic). Reads MIGRATION_CRON.
+  migration-cron:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: data-migration-scripts:latest
+    env_file:
+      - ../tracing.env
+      - .env
+    environment:
+      MIGRATION_CRON: "${MIGRATION_CRON:-0 2 * * *}"
+      MIGRATION_NAMESPACE: "${MIGRATION_NAMESPACE:-performance_tracking}"
+      MIGRATION_WRITE_DISPOSITION: "${MIGRATION_WRITE_DISPOSITION:-merge}"
+      MIGRATION_INCREMENTAL_ENABLED: "${MIGRATION_INCREMENTAL_ENABLED:-true}"
+      MIGRATION_RESET_PIPELINE_STATE: "${MIGRATION_RESET_PIPELINE_STATE:-false}"
+      MIGRATION_DROP_DESTINATION_TABLES_ON_REPLACE: "${MIGRATION_DROP_DESTINATION_TABLES_ON_REPLACE:-false}"
+      SF_SCHEMA: "${SF_SCHEMA:-performance_tracking}"
+      DLT_DATA_DIR: /app/.dlt-data
+      DLT_PIPELINES_DIR: /app/.dlt-data/pipelines
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp/bigquery-service-account.json
+      GOOGLE_CLOUD_PROJECT: "${BQ_PROJECT_ID:-}"
+      GCLOUD_PROJECT: "${BQ_PROJECT_ID:-}"
+      SNOWFLAKE_PRIVATE_KEY_PATH: "${SNOWFLAKE_PRIVATE_KEY_PATH:-/secrets/snowflake/ecomm_sf_key/ecomm_sf_key_api_user1.p8}"
+    # Reach the existing shopizer-db container by name on its network.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - shopizer
+    volumes:
+      # Mount the BigQuery service-account key.
+      - ../secrets/ecomm_sf_key/gcp/bigquery-service-account.json:/secrets/gcp/bigquery-service-account.json:ro
+      - ${SNOWFLAKE_PRIVATE_KEY_MOUNT_SOURCE:-../secrets/ecomm_sf_key/ecomm_sf_key_api_user1.p8}:/secrets/snowflake/ecomm_sf_key/ecomm_sf_key_api_user1.p8:ro
+      - migration-dlt-data:/app/.dlt-data
+    command: ["cron"]
+    restart: unless-stopped
+
+  # Pure-Python scheduler (APScheduler). Same image, different command.
+  migration-scheduler:
+    image: data-migration-scripts:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    env_file:
+      - ../tracing.env
+      - .env
+    environment:
+      MIGRATION_CRON: "${MIGRATION_CRON:-0 2 * * *}"
+      MIGRATION_NAMESPACE: "${MIGRATION_NAMESPACE:-performance_tracking}"
+      MIGRATION_WRITE_DISPOSITION: "${MIGRATION_WRITE_DISPOSITION:-merge}"
+      MIGRATION_INCREMENTAL_ENABLED: "${MIGRATION_INCREMENTAL_ENABLED:-true}"
+      MIGRATION_RESET_PIPELINE_STATE: "${MIGRATION_RESET_PIPELINE_STATE:-false}"
+      MIGRATION_DROP_DESTINATION_TABLES_ON_REPLACE: "${MIGRATION_DROP_DESTINATION_TABLES_ON_REPLACE:-false}"
+      SF_SCHEMA: "${SF_SCHEMA:-performance_tracking}"
+      MIGRATION_TZ: "${MIGRATION_TZ:-UTC}"
+      RUN_ONCE_ON_START: "${RUN_ONCE_ON_START:-false}"
+      DLT_DATA_DIR: /app/.dlt-data
+      DLT_PIPELINES_DIR: /app/.dlt-data/pipelines
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp/bigquery-service-account.json
+      GOOGLE_CLOUD_PROJECT: "${BQ_PROJECT_ID:-}"
+      GCLOUD_PROJECT: "${BQ_PROJECT_ID:-}"
+      SNOWFLAKE_PRIVATE_KEY_PATH: "${SNOWFLAKE_PRIVATE_KEY_PATH:-/secrets/snowflake/ecomm_sf_key/ecomm_sf_key_api_user1.p8}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - shopizer
+    volumes:
+      - ../secrets/ecomm_sf_key/gcp/bigquery-service-account.json:/secrets/gcp/bigquery-service-account.json:ro
+      - ${SNOWFLAKE_PRIVATE_KEY_MOUNT_SOURCE:-../secrets/ecomm_sf_key/ecomm_sf_key_api_user1.p8}:/secrets/snowflake/ecomm_sf_key/ecomm_sf_key_api_user1.p8:ro
+      - migration-dlt-data:/app/.dlt-data
+    command: ["scheduler"]
+    profiles: ["python-only"]
+    restart: unless-stopped
+
+networks:
+  shopizer:
+    name: ${SHOPIZER_NETWORK_NAME:-shopizer_default}
+    external: true
+
+volumes:
+  migration-dlt-data:

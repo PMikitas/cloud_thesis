@@ -27,7 +27,88 @@ sm-shop/.project
 **/.settings
 **/.classpath
 */sm-shop/src/main/resources/*
+!sm-shop/src/main/resources/*.example
 sm-shop/src/main/resources/database.properties
 .DS_Store
 
 .mvnw/*.jar
+
+# Local secrets and cloud credentials
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Cloud provider credential files and service-account keys
+application_default_credentials.json
+**/application_default_credentials.json
+adc.json
+**/adc.json
+*credential*.json
+*credentials*.json
+*service-account*.json
+*service_account*.json
+client_secret*.json
+**/client_secret*.json
+
+# Private keys / keystores used for cloud and warehouse access
+*.pem
+*.p8
+*.pk8
+*.p12
+*.key
+*.keystore
+*.jks
+*.pub
+id_rsa*
+id_ed25519*
+key_git_*
+thesis_git_repo_key*
+eval "$(ssh-agent -s)"*
+secrets/
+**/secrets/
+
+# Local warehouse connection files containing manually inserted credentials
+**/redshift.properties
+**/snowflake.properties
+**/vault.properties
+sm-shop/src/main/resources/redshift.properties
+sm-shop/src/main/resources/snowflake.properties
+sm-shop/src/main/resources/vault.properties
+
+# IDE-local database connections can contain usernames, JDBC URLs, or saved secrets
+.idea/
+*.idea/
+.idea/dataSources*
+.idea/dataSources/
+
+# Python/local runtime artifacts
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.venv/
+**/.venv/
+.pytest_cache/
+**/.pytest_cache/
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+
+# dlt local pipeline state and secrets
+.dlt/
+**/.dlt/
+
+# Exploratory notebooks contain executed outputs and local paths.
+data-migration-scripts/**/*.ipynb
+
+# Generated benchmark and load-test outputs
+metrics-scheduler/results/
+metrics-scheduler/*.zip
+shopizer-gatling/results/
+shopizer-gatling/results_*.zip
+shopizer-gatling/*results*.zip
+
+# Local assistant/editor state
+.claude/
+**/.claude/

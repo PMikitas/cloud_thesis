@@ -6,6 +6,7 @@ import javax.inject.Inject;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 
 import com.salesmanager.core.business.exception.ServiceException;
@@ -84,6 +85,7 @@ public class CustomerServiceImpl extends SalesManagerEntityServiceImpl<Long, Cus
 	}
 
 	@Override	
+	@CacheEvict(value = "jwtCustomerByUserName", key = "#customer.nick", condition = "#customer != null && #customer.nick != null")
 	public void saveOrUpdate(Customer customer) throws ServiceException {
 
 		LOGGER.debug("Creating Customer");
@@ -97,6 +99,7 @@ public class CustomerServiceImpl extends SalesManagerEntityServiceImpl<Long, Cus
 		}
 	}
 
+	@CacheEvict(value = "jwtCustomerByUserName", key = "#customer.nick", condition = "#customer != null && #customer.nick != null")
 	public void delete(Customer customer) throws ServiceException {
 		customer = getById(customer.getId());
 		

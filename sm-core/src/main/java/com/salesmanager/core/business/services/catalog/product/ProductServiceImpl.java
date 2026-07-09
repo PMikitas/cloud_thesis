@@ -388,6 +388,37 @@ public class ProductServiceImpl extends SalesManagerEntityServiceImpl<Long, Prod
 
 	}
 	
+	@Override
+	public Product getBySkuForShoppingCart(String productCode, MerchantStore merchant, Language language)
+			throws ServiceException {
+
+		try {
+			List<Object> products = productRepository.findBySku(productCode, merchant.getId());
+			if(products.isEmpty()) {
+				throw new ServiceException("Cannot get product with sku [" + productCode + "]");
+			}
+			BigInteger id = (BigInteger) products.get(0);
+			return productRepository.getByIdForShoppingCart(id.longValue(), merchant, language);
+		} catch (Exception e) {
+			throw new ServiceException("Cannot get product with sku [" + productCode + "]", e);
+		}
+	}
+	
+	@Override
+	public Product getBySkuForInventory(String productCode, MerchantStore merchant) throws ServiceException {
+
+		try {
+			List<Object> products = productRepository.findBySku(productCode, merchant.getId());
+			if(products.isEmpty()) {
+				throw new ServiceException("Cannot get product with sku [" + productCode + "]");
+			}
+			BigInteger id = (BigInteger) products.get(0);
+			return productRepository.getByIdForInventory(id.longValue(), merchant);
+		} catch (Exception e) {
+			throw new ServiceException("Cannot get product with sku [" + productCode + "]", e);
+		}
+	}
+	
 	public Product getBySku(String productCode, MerchantStore merchant) throws ServiceException {
 
 		try {

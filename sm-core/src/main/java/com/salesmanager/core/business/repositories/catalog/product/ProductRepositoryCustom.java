@@ -38,6 +38,10 @@ public interface ProductRepositoryCustom {
 
 		Product getById(Long productId);
 		Product getById(Long productId, MerchantStore merchant);
+		
+		Product getByIdForShoppingCart(Long productId, MerchantStore store, Language language);
+		
+		Product getByIdForInventory(Long productId, MerchantStore store);
 
 	    /**
 	     * Get product by code

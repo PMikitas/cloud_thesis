@@ -5,6 +5,7 @@ import java.util.Date;
 
 import javax.inject.Inject;
 
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
@@ -51,6 +52,12 @@ public class JWTCustomerServicesImpl extends AbstractCustomerServices {
                 true,
                 lastModified
         );
+	}
+
+	@Override
+	@Cacheable(value = "jwtCustomerByUserName", key = "#userName")
+	public UserDetails loadUserByUsername(String userName) {
+		return super.loadUserByUsername(userName);
 	}
 
 }

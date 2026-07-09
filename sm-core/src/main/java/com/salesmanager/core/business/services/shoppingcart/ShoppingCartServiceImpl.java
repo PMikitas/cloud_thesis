@@ -254,9 +254,7 @@ public class ShoppingCartServiceImpl extends SalesManagerEntityServiceImpl<Long,
 				}
 
 				Set<ShoppingCartItem> refreshedItems = new HashSet<>(items);
-
 				shoppingCart.setLineItems(refreshedItems);
-				update(shoppingCart);
 
 				if (cartIsObsolete) {
 					shoppingCart.setObsolete(true);
@@ -292,7 +290,7 @@ public class ShoppingCartServiceImpl extends SalesManagerEntityServiceImpl<Long,
 	@Transactional
 	private void getPopulatedItem(final ShoppingCartItem item, MerchantStore store) throws Exception {
 
-		Product product = productService.getBySku(item.getSku(), store, store.getDefaultLanguage());
+		Product product = productService.getBySkuForShoppingCart(item.getSku(), store, store.getDefaultLanguage());
 
 		if (product == null) {
 			item.setObsolete(true);
@@ -444,7 +442,7 @@ public class ShoppingCartServiceImpl extends SalesManagerEntityServiceImpl<Long,
 		if (CollectionUtils.isNotEmpty(sessionCart.getLineItems())) {
 			shoppingCartItemsSet = new HashSet<ShoppingCartItem>();
 			for (ShoppingCartItem shoppingCartItem : sessionCart.getLineItems()) {
-				Product product = productService.getBySku(shoppingCartItem.getSku(), store, store.getDefaultLanguage());
+				Product product = productService.getBySkuForShoppingCart(shoppingCartItem.getSku(), store, store.getDefaultLanguage());
 						//.getById(shoppingCartItem.getProductId());
 				if (product == null) {
 					throw new Exception("Item with sku " + shoppingCartItem.getSku() + " does not exist");

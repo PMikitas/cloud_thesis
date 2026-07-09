@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} [%-5level] %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Set to DEBUG to log every HTTP request/response body (verbose). -->
+  <!-- Use WARN or ERROR in CI to keep output clean.                   -->
+  <logger name="io.gatling.http.engine.response" level="WARN"/>
+  <logger name="io.gatling"                       level="WARN"/>
+
+  <root level="WARN">
+    <appender-ref ref="CONSOLE"/>
+  </root>
+
+</configuration>

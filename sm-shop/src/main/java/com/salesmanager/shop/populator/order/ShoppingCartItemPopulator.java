@@ -35,7 +35,7 @@ public class ShoppingCartItemPopulator extends
 
 		Product product = null;
 		try {
-			product = productService.getBySku(source.getSku(), store, language);
+			product = productService.getBySkuForShoppingCart(source.getSku(), store, language);
 		} catch (ServiceException e) {
 			throw new ServiceRuntimeException(e);
 		}

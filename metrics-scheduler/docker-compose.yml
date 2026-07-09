@@ -1,0 +1,27 @@
+services:
+  metrics-cron:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: shopizer-metrics-scheduler:latest
+    env_file:
+      - ../tracing.env
+      - .env
+    environment:
+      METRICS_SQL_FILE: "${METRICS_SQL_FILE:-/workspace/metrics_scripts.sql}"
+      METRICS_OUTPUT_DIR: "${METRICS_OUTPUT_DIR:-/app/results}"
+      METRICS_OPERATIONAL_CRON: "${METRICS_OPERATIONAL_CRON:-*/15 * * * *}"
+      METRICS_BUSINESS_CRON: "${METRICS_BUSINESS_CRON:-*/30 * * * *}"
+      METRICS_BEHAVIORAL_CRON: "${METRICS_BEHAVIORAL_CRON:-0 */2 * * *}"
+      METRICS_DAILY_REPORTING_CRON: "${METRICS_DAILY_REPORTING_CRON:-0 */6 * * *}"
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp/bigquery-service-account.json
+      METRICS_SNOWFLAKE_WAREHOUSE: "${METRICS_SNOWFLAKE_WAREHOUSE:-ANALYTICS_WH}"
+      SNOWFLAKE_PRIVATE_KEY_PATH: "${SNOWFLAKE_PRIVATE_KEY_PATH:-/secrets/snowflake/ecomm_sf_key/ecomm_sf_key_api_user1.p8}"
+      SHOPIZER_REPO_ROOT: /workspace
+    volumes:
+      - ..:/workspace:ro
+      - ./results:/app/results
+      - ../secrets/ecomm_sf_key/gcp/bigquery-service-account.json:/secrets/gcp/bigquery-service-account.json:ro
+      - ${SNOWFLAKE_PRIVATE_KEY_MOUNT_SOURCE:-../secrets/ecomm_sf_key/ecomm_sf_key_api_user1.p8}:/secrets/snowflake/ecomm_sf_key/ecomm_sf_key_api_user1.p8:ro
+    command: ["cron"]
+    restart: unless-stopped
