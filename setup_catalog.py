@@ -12,6 +12,9 @@ ADMIN_PASS  = os.environ.get("SHOPIZER_ADMIN_PASS", "password")
 STORE_CODE  = os.environ.get("SHOPIZER_STORE_CODE", "DEFAULT")
 LANG        = os.environ.get("SHOPIZER_LANG", "en")
 PAGE_SIZE   = 200
+HTTP_TIMEOUT_SECONDS = int(os.environ.get("SHOPIZER_SETUP_HTTP_TIMEOUT_SECONDS", "30"))
+MAX_LISTING_PAGES = int(os.environ.get("SHOPIZER_SETUP_MAX_LISTING_PAGES", "25"))
+CLEANUP_ENABLED = os.environ.get("SHOPIZER_SETUP_CLEANUP_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
 # Load-test catalogs should not exhaust inventory before the system bottlenecks.
 DEFAULT_INVENTORY_QTY = 100000
 CATEGORY_ID_CACHE = {}
@@ -24,7 +27,7 @@ def _call(method, path, body=None, token=None):
     req = urllib.request.Request(f"{BASE_URL}{path}", data=data, method=method, headers=headers)
     if token:
         req.add_header("Authorization", f"Bearer {token}")
-    with urllib.request.urlopen(req) as r:
+    with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as r:
         raw = r.read()
         return json.loads(raw) if raw else {}
 
@@ -38,7 +41,7 @@ def delete(path, token):
     req = urllib.request.Request(f"{BASE_URL}{path}", method="DELETE")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
-    with urllib.request.urlopen(req) as r:
+    with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as r:
         return r.status
 
 def announce_step(label):
@@ -126,7 +129,7 @@ def list_public_products_by_category_slug(category_slug, page=0, count=PAGE_SIZE
 def collect_public_products_by_category_id(category_id):
     page = 0
     out = []
-    while True:
+    while page < MAX_LISTING_PAGES:
         batch = list_public_products(page=page, category_id=category_id)
         if not batch:
             break
@@ -134,12 +137,14 @@ def collect_public_products_by_category_id(category_id):
         if len(batch) < PAGE_SIZE:
             break
         page += 1
+    else:
+        print(f"  ! category id={category_id} listing reached page cap ({MAX_LISTING_PAGES}); continuing with partial results")
     return out
 
 def collect_public_products_for_category_slug(category_slug):
     page = 0
     out = []
-    while True:
+    while page < MAX_LISTING_PAGES:
         batch = list_public_products_by_category_slug(category_slug, page=page)
         if not batch:
             break
@@ -147,6 +152,8 @@ def collect_public_products_for_category_slug(category_slug):
         if len(batch) < PAGE_SIZE:
             break
         page += 1
+    else:
+        print(f"  ! category {category_slug} slug listing reached page cap ({MAX_LISTING_PAGES}); continuing with partial results")
     return out
 
 def _dedupe_public_products(products):
@@ -165,7 +172,7 @@ def collect_public_products(category_id=None):
 
     global_listing = []
     page = 0
-    while True:
+    while page < MAX_LISTING_PAGES:
         batch = list_public_products(page=page)
         if not batch:
             break
@@ -173,6 +180,8 @@ def collect_public_products(category_id=None):
         if len(batch) < PAGE_SIZE:
             break
         page += 1
+    else:
+        print(f"  ! global product listing reached page cap ({MAX_LISTING_PAGES}); continuing with partial results")
 
     if global_listing:
         return _dedupe_public_products(global_listing)
@@ -203,10 +212,18 @@ def collect_managed_products_for_cleanup(token):
             print(f"  ! {category_code:<20} category not found")
             continue
 
-        print(f"  · scanning {category_code:<20} (id={category_id})")
-        visible = collect_public_products_by_category_id(category_id)
+        print(f"  · scanning {category_code:<20} (id={category_id})", flush=True)
+        try:
+            visible = collect_public_products_by_category_id(category_id)
+        except Exception as e:
+            print(f"    ! category-id scan failed for {category_code}: {type(e).__name__}: {e}")
+            visible = []
         if not visible:
-            visible = collect_public_products_for_category_slug(category_code)
+            try:
+                visible = collect_public_products_for_category_slug(category_code)
+            except Exception as e:
+                print(f"    ! category-slug scan failed for {category_code}: {type(e).__name__}: {e}")
+                visible = []
 
         for product in visible:
             sku = product.get("sku")
@@ -1070,6 +1087,9 @@ def create_products(token):
 
 def delete_managed_products(token):
     print("\n── Cleanup Existing Managed Products ────────────────────────────────")
+    if not CLEANUP_ENABLED:
+        print("  Cleanup disabled by SHOPIZER_SETUP_CLEANUP_ENABLED=false")
+        return
     managed = collect_managed_products_for_cleanup(token)
     if not managed:
         print("  No previously seeded managed products found.")
