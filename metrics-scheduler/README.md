@@ -130,7 +130,9 @@ docker compose up --build -d metrics-cron
 ```
 
 By default, the scheduler uses `../tracing.env`
-`TRACING_MIGRATIONS_CLOUD_SOLUTIONS` for warehouse selection.
+`TRACING_MIGRATIONS_CLOUD_SOLUTIONS` for warehouse selection. Set
+`METRICS_WAREHOUSES=snowflake` in `.env` to run scheduled metrics for only one
+warehouse without changing migration or API-event tracing destinations.
 
 Run one group manually:
 
@@ -183,4 +185,6 @@ SELECT ...
 ```
 
 The scheduler uses `TRACING_MIGRATIONS_CLOUD_SOLUTIONS` from `../tracing.env` by
-default. To benchmark a one-off subset, pass `--warehouses` explicitly.
+default. To benchmark a one-off subset, pass `--warehouses` explicitly. To make
+the scheduled container run a subset, set `METRICS_WAREHOUSES` in
+`metrics-scheduler/.env`.

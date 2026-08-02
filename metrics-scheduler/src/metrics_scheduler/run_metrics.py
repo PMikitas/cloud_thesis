@@ -260,6 +260,10 @@ def tracing_config_bool(env_name: str, default: bool) -> bool:
 
 
 def default_metrics_warehouses() -> list[str]:
+    metrics_warehouses = config_value("METRICS_WAREHOUSES", METRICS_ENV_VALUES)
+    if metrics_warehouses:
+        return [warehouse.strip() for warehouse in metrics_warehouses.split(",") if warehouse.strip()]
+
     if not tracing_config_bool("TRACING_ENABLED_MIGRATIONS", True):
         return []
     configured = tracing_config_value("TRACING_MIGRATIONS_CLOUD_SOLUTIONS") or "snowflake"

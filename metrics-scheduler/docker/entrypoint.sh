@@ -4,10 +4,13 @@ set -eu
 mkdir -p "${METRICS_OUTPUT_DIR:-/app/results}"
 
 mode="${1:-cron}"
-warehouses="${TRACING_MIGRATIONS_CLOUD_SOLUTIONS:-snowflake}"
-case "${TRACING_ENABLED_MIGRATIONS:-true}" in
-  false|FALSE|0|no|NO|off|OFF) warehouses="" ;;
-esac
+warehouses="${METRICS_WAREHOUSES:-}"
+if [ -z "$warehouses" ]; then
+  warehouses="${TRACING_MIGRATIONS_CLOUD_SOLUTIONS:-snowflake}"
+  case "${TRACING_ENABLED_MIGRATIONS:-true}" in
+    false|FALSE|0|no|NO|off|OFF) warehouses="" ;;
+  esac
+fi
 warehouse_args=""
 if [ -n "$warehouses" ]; then
   warehouse_args="--warehouses $(echo "$warehouses" | tr ',' ' ')"
