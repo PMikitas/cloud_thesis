@@ -13,10 +13,13 @@ mode="${1:-cron}"
 case "$mode" in
   cron)
     cron_expr="${MIGRATION_CRON:-0 2 * * *}"
-    destinations="${TRACING_MIGRATIONS_CLOUD_SOLUTIONS:-snowflake}"
-    case "${TRACING_ENABLED_MIGRATIONS:-true}" in
-      false|FALSE|0|no|NO|off|OFF) destinations="" ;;
-    esac
+    destinations="${MIGRATION_DESTINATIONS_OVERRIDE:-${MIGRATION_DESTINATIONS:-}}"
+    if [ -z "$destinations" ]; then
+      destinations="${TRACING_MIGRATIONS_CLOUD_SOLUTIONS:-snowflake}"
+      case "${TRACING_ENABLED_MIGRATIONS:-true}" in
+        false|FALSE|0|no|NO|off|OFF) destinations="" ;;
+      esac
+    fi
     destination_args=""
     if [ -n "$destinations" ]; then
         destination_args="--destinations $(echo "$destinations" | tr ',' ' ')"

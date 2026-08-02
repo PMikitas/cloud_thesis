@@ -15,6 +15,7 @@ Design notes:
 from __future__ import annotations
 
 import argparse
+import base64
 import logging
 import os
 import shutil
@@ -157,6 +158,13 @@ def _tracing_config_bool(env_name: str, default: bool) -> bool:
 
 
 def default_migration_destinations() -> list[str]:
+    explicit_destinations = _first_non_blank(
+        os.environ.get("MIGRATION_DESTINATIONS_OVERRIDE"),
+        os.environ.get("MIGRATION_DESTINATIONS"),
+    )
+    if explicit_destinations:
+        return _csv_list(explicit_destinations, DEFAULT_DESTINATIONS)
+
     if not _tracing_config_bool("TRACING_ENABLED_MIGRATIONS", True):
         return []
     return _csv_list(
@@ -298,6 +306,94 @@ def _drop_bigquery_tables_if_requested(
     client = bigquery.Client(project=project_id)
     for table_name in table_names:
         client.delete_table(f"{project_id}.{dataset_name}.{table_name}", not_found_ok=True)
+
+
+def _snowflake_identifier(value: str) -> str:
+    return '"' + value.upper().replace('"', '""') + '"'
+
+
+def _snowflake_account(value: str) -> str:
+    account = value.strip()
+    for prefix in ("https://", "http://"):
+        if account.startswith(prefix):
+            account = account[len(prefix) :]
+    account = account.rstrip("/")
+    suffix = ".snowflakecomputing.com"
+    if account.endswith(suffix):
+        account = account[: -len(suffix)]
+    return account
+
+
+def _snowflake_connector_private_key(private_key: str) -> bytes:
+    if "BEGIN" not in private_key:
+        return base64.b64decode(private_key)
+
+    from cryptography.hazmat.primitives import serialization
+
+    passphrase = os.environ.get("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE", "").strip()
+    loaded_key = serialization.load_pem_private_key(
+        private_key.encode("utf-8"),
+        password=passphrase.encode("utf-8") if passphrase else None,
+    )
+    return loaded_key.private_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+
+
+def _drop_snowflake_tables_if_requested(
+    creds: dict[str, str],
+    private_key: str,
+    dataset_name: str,
+    tables: Iterable[str],
+    write_disposition: str,
+) -> None:
+    if write_disposition != "replace":
+        return
+
+    should_drop = _bool_env(
+        "MIGRATION_DROP_DESTINATION_TABLES_ON_REPLACE",
+        default=True,
+    )
+    if not should_drop:
+        return
+
+    table_names = _managed_destination_tables(tables)
+    database = _snowflake_identifier(creds["SNOWFLAKE_DATABASE"])
+    schema = _snowflake_identifier(dataset_name)
+
+    logger.info(
+        "Dropping existing Snowflake tables before replace: schema=%s.%s tables=%s",
+        creds["SNOWFLAKE_DATABASE"],
+        dataset_name,
+        table_names,
+    )
+
+    import snowflake.connector
+
+    connection_config = {
+        "user": creds["SNOWFLAKE_USERNAME"],
+        "private_key": _snowflake_connector_private_key(private_key),
+        "account": _snowflake_account(creds["SNOWFLAKE_HOST"]),
+        "warehouse": creds["SNOWFLAKE_WAREHOUSE"],
+        "database": creds["SNOWFLAKE_DATABASE"],
+        "schema": dataset_name,
+        "role": creds["SNOWFLAKE_ROLE"],
+    }
+
+    connection = snowflake.connector.connect(**connection_config)
+    try:
+        cursor = connection.cursor()
+        try:
+            cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {database}.{schema}")
+            for table_name in table_names:
+                table = _snowflake_identifier(table_name)
+                cursor.execute(f"DROP TABLE IF EXISTS {database}.{schema}.{table}")
+        finally:
+            cursor.close()
+    finally:
+        connection.close()
 
 
 def _load_snowflake_private_key() -> str:
@@ -466,6 +562,7 @@ def run_snowflake(tables: list[str], write_disposition: str) -> None:
 
     destination = dlt_snowflake_destination(destination_config)
     _reset_pipeline_state_if_requested(pipeline_name, "snowflake", dataset_name, write_disposition)
+    _drop_snowflake_tables_if_requested(creds, private_key, dataset_name, tables, write_disposition)
     pipeline = dlt.pipeline(
         destination=destination,
         pipeline_name=pipeline_name,

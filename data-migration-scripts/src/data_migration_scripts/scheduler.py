@@ -3,8 +3,10 @@ inside any plain Python environment (no system cron needed).
 
 Env vars:
     MIGRATION_CRON          5-field cron expression (default "0 2 * * *")
+    MIGRATION_DESTINATIONS  optional comma-separated migration-only override,
+                            e.g. "snowflake"
     TRACING_MIGRATIONS_CLOUD_SOLUTIONS
-                            comma-separated, e.g. "snowflake"
+                            comma-separated fallback, e.g. "snowflake"
     MIGRATION_TZ            IANA tz name (default "UTC")
     RUN_ONCE_ON_START       "true" to also fire once at startup
 """
