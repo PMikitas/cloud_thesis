@@ -18,11 +18,14 @@ from google.cloud import bigquery
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_MIGRATION_ROOT = Path(__file__).resolve().parent
+METRICS_ROOT = REPO_ROOT / "metrics-scheduler"
 REDSHIFT_PROPERTIES = REPO_ROOT / "sm-shop" / "src" / "main" / "resources" / "redshift.properties"
 SNOWFLAKE_PROPERTIES = REPO_ROOT / "sm-shop" / "src" / "main" / "resources" / "snowflake.properties"
 MIGRATION_ENV = DATA_MIGRATION_ROOT / ".env"
+METRICS_ENV = METRICS_ROOT / ".env"
 DEFAULT_CUTOFF = "2026-04-29"
 DEFAULT_EVENT_TABLE = "api_performance"
+DEFAULT_SNOWFLAKE_ANALYTICS_WAREHOUSE = "ANALYTICS_WH"
 BQ_SCOPES = ("https://www.googleapis.com/auth/cloud-platform",)
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 PROJECT_RE = re.compile(r"^[A-Za-z0-9-]+$")
@@ -30,6 +33,8 @@ PROJECT_RE = re.compile(r"^[A-Za-z0-9-]+$")
 
 def load_key_value_file(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
+    if not path.exists():
+        return values
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -37,6 +42,13 @@ def load_key_value_file(path: Path) -> dict[str, str]:
         key, value = line.split("=", 1)
         values[key.strip()] = value.strip()
     return values
+
+
+def first_non_blank(*values: str | None) -> str | None:
+    for value in values:
+        if value and value.strip():
+            return value.strip()
+    return None
 
 
 def safe_identifier(value: str, label: str) -> str:
@@ -142,6 +154,7 @@ def build_snowflake_connection(
     property_values: dict[str, str],
     env_values: dict[str, str],
 ) -> tuple[snowflake.connector.SnowflakeConnection, str, str, str]:
+    metrics_values = load_key_value_file(METRICS_ENV)
     url_value = property_values.get("snowflake.url", "")
     account = env_values.get("SNOWFLAKE_HOST")
     if not account and url_value:
@@ -156,19 +169,28 @@ def build_snowflake_connection(
     database = env_values.get("SNOWFLAKE_DATABASE") or property_values["snowflake.database"]
     schema = env_values.get("SF_SCHEMA") or property_values["snowflake.schema"]
     table = property_values.get("snowflake.table", DEFAULT_EVENT_TABLE)
+    warehouse = first_non_blank(
+        os.environ.get("METRICS_SNOWFLAKE_WAREHOUSE"),
+        metrics_values.get("METRICS_SNOWFLAKE_WAREHOUSE"),
+        env_values.get("METRICS_SNOWFLAKE_WAREHOUSE"),
+        DEFAULT_SNOWFLAKE_ANALYTICS_WAREHOUSE,
+    )
 
     safe_identifier(schema, "Snowflake schema")
     safe_identifier(table, "Snowflake table")
+    safe_identifier(warehouse, "Snowflake warehouse")
 
     connection = snowflake.connector.connect(
         account=account,
         user=env_values.get("SNOWFLAKE_USERNAME") or property_values["snowflake.user"],
         private_key=resolve_snowflake_private_key(property_values, env_values),
-        warehouse=env_values.get("SNOWFLAKE_WAREHOUSE") or property_values["snowflake.warehouse"],
+        warehouse=warehouse,
         role=env_values.get("SNOWFLAKE_ROLE") or property_values["snowflake.role"],
         database=database,
         schema=schema,
     )
+    with connection.cursor() as cursor:
+        cursor.execute(f"USE WAREHOUSE {warehouse}")
     return connection, database, schema, table
 
 

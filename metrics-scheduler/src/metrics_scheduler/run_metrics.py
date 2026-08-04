@@ -412,7 +412,15 @@ def build_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
     if not account:
         raise RuntimeError("Snowflake account/host is missing")
 
-    return snowflake.connector.connect(
+    warehouse = (
+        config_value("METRICS_SNOWFLAKE_WAREHOUSE", METRICS_ENV_VALUES)
+        or property_values["snowflake.warehouse"]
+        or env_values.get("SNOWFLAKE_WAREHOUSE")
+    )
+    if not warehouse:
+        raise RuntimeError("Snowflake warehouse is missing")
+
+    connection = snowflake.connector.connect(
         account=account,
         user=(
             config_value("METRICS_SNOWFLAKE_USERNAME", METRICS_ENV_VALUES)
@@ -421,11 +429,7 @@ def build_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
             or env_values.get("SNOWFLAKE_USERNAME")
         ),
         private_key=resolve_snowflake_private_key(property_values, env_values),
-        warehouse=(
-            config_value("METRICS_SNOWFLAKE_WAREHOUSE", METRICS_ENV_VALUES)
-            or property_values["snowflake.warehouse"]
-            or env_values.get("SNOWFLAKE_WAREHOUSE")
-        ),
+        warehouse=warehouse,
         role=(
             config_value("METRICS_SNOWFLAKE_ROLE", METRICS_ENV_VALUES)
             or property_values["snowflake.role"]
@@ -443,6 +447,9 @@ def build_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
             or env_values.get("SNOWFLAKE_SCHEMA")
         ),
     )
+    with connection.cursor() as cursor:
+        cursor.execute(f"USE WAREHOUSE {safe_identifier(warehouse, 'Snowflake warehouse')}")
+    return connection
 
 
 def build_snowflake_latest_data_sql(table_name: str) -> str:
