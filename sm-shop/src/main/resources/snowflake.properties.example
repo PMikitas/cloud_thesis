@@ -10,6 +10,19 @@ snowflake.schema=PERFORMANCE_TRACKING
 snowflake.table=API_TRACKING
 snowflake.channel=shopizer_api_tracing_channel
 snowflake.client.name=SHOPIZER_API_TRACER
+
+# Snowflake-only raw immutable operational event stream.
+# This uses the same Snowpipe Streaming credentials as API tracing, but writes to a separate append-only table.
+snowflake.operational.events.enabled=false
+snowflake.operational.events.table=OPERATIONAL_EVENTS
+snowflake.operational.events.channel=shopizer_operational_events_channel
+snowflake.operational.events.client.name=SHOPIZER_OPERATIONAL_EVENT_TRACER
+snowflake.operational.events.flush.fixed.delay.ms=50
+snowflake.operational.events.batch.size=20000
+snowflake.operational.events.max.batches.per.flush=10
+snowflake.operational.events.max.flush.duration.ms=60000
+snowflake.operational.events.tables=CUSTOMER,PRODUCT,PRODUCT_AVAILABILITY,PRODUCT_DESCRIPTION,PRODUCT_PRICE,SHOPPING_CART,SHOPPING_CART_ITEM,ORDERS,ORDER_PRODUCT,ORDER_TOTAL,ORDER_STATUS_HISTORY,SM_TRANSACTION
+
 snowflake.private.key.path=/secrets/snowflake/ecomm_sf_key.p8
 snowflake.private.key=
 snowflake.private.key.passphrase=

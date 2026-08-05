@@ -8,6 +8,8 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
+from numbers import Number
 from pathlib import Path
 from time import perf_counter, sleep
 from typing import Any
@@ -136,6 +138,25 @@ METRICS_ENV = METRICS_ROOT / ".env"
 MIGRATION_ENV = DATA_MIGRATION_ROOT / ".env"
 DEFAULT_SQL_FILE = REPO_ROOT / "metrics_scripts.sql"
 DEFAULT_OUTPUT_DIR = Path(os.environ.get("METRICS_OUTPUT_DIR", "/app/results"))
+DEFAULT_SNOWFLAKE_RAW_EVENTS_CTE_FILE = METRICS_ROOT / "snowflake_raw_event_state.sql"
+SNOWFLAKE_RAW_EVENTS_WAREHOUSE_LABEL = "snowflake_raw_events"
+SNOWFLAKE_RAW_EVENTS_COMPARISON_LABEL = "snowflake_raw_events_comparison"
+SNOWFLAKE_RAW_OPERATIONAL_TABLES = frozenset(
+    {
+        "customer",
+        "product",
+        "product_availability",
+        "product_description",
+        "product_price",
+        "shopping_cart",
+        "shopping_cart_item",
+        "orders",
+        "order_product",
+        "order_total",
+        "order_status_history",
+        "sm_transaction",
+    }
+)
 
 
 def load_key_value_file(path: Path) -> dict[str, str]:
@@ -166,6 +187,13 @@ def config_value(name: str, *value_maps: dict[str, str]) -> str | None:
         if value and value.strip():
             return value.strip()
     return None
+
+
+def config_bool(name: str, default: bool, *value_maps: dict[str, str]) -> bool:
+    value = config_value(name, *value_maps)
+    if value is None:
+        return default
+    return value.strip().lower() not in {"false", "0", "no", "off"}
 
 
 def snowflake_account_from_url(url_value: str) -> str | None:
@@ -225,12 +253,18 @@ SNOWFLAKE_EVENT_TABLE_CANDIDATES = tuple(
         if candidate
     )
 )
+SNOWFLAKE_OPERATIONAL_EVENTS_TABLE = (
+    config_value("METRICS_SNOWFLAKE_OPERATIONAL_EVENTS_TABLE", METRICS_ENV_VALUES)
+    or SNOWFLAKE_PROPERTY_VALUES.get("snowflake.operational.events.table")
+    or "OPERATIONAL_EVENTS"
+).strip().lower()
 SNOWFLAKE_EVENT_TABLE_REFERENCE_RE = re.compile(
     rf"\b{re.escape(SNOWFLAKE_DEFAULT_SCHEMA)}\.(api_tracking|api_performance)\b",
     re.IGNORECASE,
 )
 RESOLVED_SNOWFLAKE_EVENT_TABLE: str | None = None
 SNOWFLAKE_EVENT_TABLE_PROBE_RESULTS: dict[str, dict[str, Any]] = {}
+SNOWFLAKE_RAW_EVENTS_CTE_PREFIX: str | None = None
 
 
 def slugify(text: str) -> str:
@@ -471,6 +505,91 @@ def apply_snowflake_event_table(sql: str, table_name: str) -> str:
     return SNOWFLAKE_EVENT_TABLE_REFERENCE_RE.sub(
         f"{SNOWFLAKE_DEFAULT_SCHEMA}.{table_name}",
         sql,
+    )
+
+
+def snowflake_raw_events_cte_file() -> Path:
+    configured = config_value("METRICS_SNOWFLAKE_RAW_EVENTS_CTE_FILE", METRICS_ENV_VALUES)
+    if not configured:
+        return DEFAULT_SNOWFLAKE_RAW_EVENTS_CTE_FILE
+
+    configured_path = Path(configured).expanduser()
+    if configured_path.is_absolute():
+        return configured_path
+    return (REPO_ROOT / configured_path).resolve()
+
+
+def render_snowflake_raw_events_cte_prefix() -> str:
+    global SNOWFLAKE_RAW_EVENTS_CTE_PREFIX
+
+    if SNOWFLAKE_RAW_EVENTS_CTE_PREFIX is not None:
+        return SNOWFLAKE_RAW_EVENTS_CTE_PREFIX
+
+    cte_file = snowflake_raw_events_cte_file()
+    if not cte_file.is_file():
+        raise RuntimeError(f"Snowflake raw operational event CTE file not found: {cte_file}")
+
+    schema = safe_identifier(SNOWFLAKE_DEFAULT_SCHEMA, "Snowflake schema")
+    operational_events_table = safe_identifier(
+        SNOWFLAKE_OPERATIONAL_EVENTS_TABLE,
+        "Snowflake operational events table",
+    )
+    rendered = cte_file.read_text(encoding="utf-8").strip().rstrip(";")
+    rendered = rendered.replace("{{SNOWFLAKE_SCHEMA}}", schema)
+    rendered = rendered.replace("{{OPERATIONAL_EVENTS_TABLE}}", operational_events_table)
+    SNOWFLAKE_RAW_EVENTS_CTE_PREFIX = rendered
+    return rendered
+
+
+def rewrite_snowflake_raw_event_relation_names(sql: str, event_table_name: str) -> str:
+    def repl(match: re.Match[str]) -> str:
+        table_name = match.group(1)
+        normalized_table = table_name.lower()
+        if normalized_table in {"api_performance", "api_tracking"}:
+            return f"{SNOWFLAKE_DEFAULT_SCHEMA}.{event_table_name}"
+        if normalized_table in SNOWFLAKE_RAW_OPERATIONAL_TABLES:
+            return normalized_table
+        return match.group(0)
+
+    return QUALIFIED_NAME_RE.sub(repl, sql)
+
+
+def merge_cte_prefix(sql: str, cte_prefix: str) -> str:
+    normalized_sql = sql.strip().rstrip(";")
+    if re.match(r"^WITH\b", normalized_sql, re.IGNORECASE):
+        return re.sub(
+            r"^WITH\b",
+            f"WITH\n{cte_prefix},",
+            normalized_sql,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+    return f"WITH\n{cte_prefix}\n{normalized_sql}"
+
+
+def build_snowflake_raw_events_sql(sql: str) -> str:
+    resolved_api_event_table = resolve_snowflake_event_table()
+    normalized_sql = rewrite_snowflake_raw_event_relation_names(sql, resolved_api_event_table)
+    return merge_cte_prefix(normalized_sql, render_snowflake_raw_events_cte_prefix())
+
+
+def fetch_snowflake_raw_events_dataframe(sql: str) -> QueryExecutionResult:
+    result = fetch_snowflake_dataframe(build_snowflake_raw_events_sql(sql))
+    return QueryExecutionResult(
+        dataframe=result.dataframe,
+        data_volume_bytes=result.data_volume_bytes,
+        data_volume_source=result.data_volume_source,
+        query_id=result.query_id,
+        result_cache_hit=result.result_cache_hit,
+        returned_bytes=result.returned_bytes,
+        extra_metadata={
+            **(result.extra_metadata or {}),
+            "snowflake_raw_events_table_used": (
+                f"{SNOWFLAKE_DEFAULT_SCHEMA}.{SNOWFLAKE_OPERATIONAL_EVENTS_TABLE}"
+            ),
+            "snowflake_raw_events_cte_file": str(snowflake_raw_events_cte_file()),
+            "snowflake_raw_events_source": "immutable_operational_events",
+        },
     )
 
 
@@ -1303,8 +1422,33 @@ def build_latest_data_timestamp_sql(warehouse: str) -> str:
     raise RuntimeError(f"Unsupported warehouse: {warehouse}")
 
 
+def build_snowflake_raw_events_latest_data_timestamp_sql() -> str:
+    api_event_table = resolve_snowflake_event_table()
+    operational_events_table = safe_identifier(
+        SNOWFLAKE_OPERATIONAL_EVENTS_TABLE,
+        "Snowflake operational events table",
+    )
+    return (
+        "SELECT MAX(latest_data_used_timestamp) AS latest_data_used_timestamp "
+        "FROM ("
+        "  SELECT MAX(event_timestamp) AS latest_data_used_timestamp "
+        f"  FROM {SNOWFLAKE_DEFAULT_SCHEMA}.{api_event_table} "
+        "  UNION ALL "
+        "  SELECT MAX(occurred_at) AS latest_data_used_timestamp "
+        f"  FROM {SNOWFLAKE_DEFAULT_SCHEMA}.{operational_events_table}"
+        ")"
+    )
+
+
 def fetch_latest_data_used_timestamp(warehouse: str) -> datetime | None:
     freshness_df = dataframe_for_warehouse(warehouse, build_latest_data_timestamp_sql(warehouse))
+    if freshness_df.empty or freshness_df.shape[1] == 0:
+        return None
+    return normalize_timestamp_value(freshness_df.iloc[0, 0])
+
+
+def fetch_snowflake_raw_events_latest_data_used_timestamp() -> datetime | None:
+    freshness_df = fetch_snowflake_dataframe(build_snowflake_raw_events_latest_data_timestamp_sql()).dataframe
     if freshness_df.empty or freshness_df.shape[1] == 0:
         return None
     return normalize_timestamp_value(freshness_df.iloc[0, 0])
@@ -1412,11 +1556,130 @@ def write_result_files(
     )
 
 
+def normalize_comparison_value(value: Any) -> Any:
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, pd.Timestamp):
+        return value.to_pydatetime().isoformat()
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
+def normalize_dataframe_for_comparison(dataframe: pd.DataFrame) -> pd.DataFrame:
+    normalized = dataframe.copy()
+    normalized.columns = [str(column) for column in normalized.columns]
+    for column in normalized.columns:
+        normalized[column] = normalized[column].map(normalize_comparison_value)
+        non_null = normalized[column].dropna()
+        if non_null.empty:
+            continue
+        if all(isinstance(value, Number) and not isinstance(value, bool) for value in non_null):
+            normalized[column] = pd.to_numeric(normalized[column], errors="coerce")
+
+    if normalized.empty:
+        return normalized.reset_index(drop=True)
+
+    sort_frame = normalized.copy()
+    for column in sort_frame.columns:
+        sort_frame[column] = sort_frame[column].map(lambda value: "" if value is None else str(value))
+    sorted_index = sort_frame.sort_values(
+        by=list(sort_frame.columns),
+        kind="mergesort",
+        na_position="first",
+    ).index
+    return normalized.loc[sorted_index].reset_index(drop=True)
+
+
+def compare_metric_dataframes(
+    baseline: pd.DataFrame,
+    raw_events: pd.DataFrame,
+) -> dict[str, Any]:
+    absolute_tolerance = env_float("METRICS_COMPARE_ABSOLUTE_TOLERANCE", 0.000001)
+    relative_tolerance = env_float("METRICS_COMPARE_RELATIVE_TOLERANCE", 0.000001)
+    normalized_baseline = normalize_dataframe_for_comparison(baseline)
+    normalized_raw_events = normalize_dataframe_for_comparison(raw_events)
+
+    comparison: dict[str, Any] = {
+        "matched": False,
+        "baseline_rows": len(normalized_baseline),
+        "raw_events_rows": len(normalized_raw_events),
+        "baseline_columns": list(normalized_baseline.columns),
+        "raw_events_columns": list(normalized_raw_events.columns),
+        "absolute_tolerance": absolute_tolerance,
+        "relative_tolerance": relative_tolerance,
+    }
+
+    try:
+        pd.testing.assert_frame_equal(
+            normalized_baseline,
+            normalized_raw_events,
+            check_dtype=False,
+            check_like=False,
+            check_exact=False,
+            atol=absolute_tolerance,
+            rtol=relative_tolerance,
+        )
+    except AssertionError as exc:
+        comparison["message"] = str(exc)
+        comparison["baseline_preview"] = normalized_baseline.head(5).to_dict(orient="records")
+        comparison["raw_events_preview"] = normalized_raw_events.head(5).to_dict(orient="records")
+        return comparison
+
+    comparison["matched"] = True
+    comparison["message"] = "baseline and raw-event Snowflake result sets match"
+    return comparison
+
+
+def write_snowflake_raw_events_comparison_file(
+    output_dir: Path,
+    group_name: str,
+    definition: QueryDefinition,
+    comparison: dict[str, Any],
+    baseline_result: QueryExecutionResult,
+    raw_events_result: QueryExecutionResult,
+    calculated_at_utc: datetime,
+) -> Path:
+    run_key = calculated_at_utc.strftime("%Y%m%dT%H%M%SZ")
+    query_folder = (
+        output_dir
+        / SNOWFLAKE_RAW_EVENTS_COMPARISON_LABEL
+        / group_name
+        / f"q{definition.query_id:02d}_{definition.slug}"
+    )
+    query_folder.mkdir(parents=True, exist_ok=True)
+    comparison_path = query_folder / f"{run_key}.json"
+    payload = {
+        "executed_at_utc": run_key,
+        "group": group_name,
+        "query_id": definition.query_id,
+        "slug": definition.slug,
+        "baseline_warehouse": "snowflake",
+        "raw_events_warehouse": SNOWFLAKE_RAW_EVENTS_WAREHOUSE_LABEL,
+        "baseline_query_id": baseline_result.query_id,
+        "raw_events_query_id": raw_events_result.query_id,
+        "baseline_data_volume_bytes": baseline_result.data_volume_bytes,
+        "raw_events_data_volume_bytes": raw_events_result.data_volume_bytes,
+        **comparison,
+    }
+    comparison_path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    return comparison_path
+
+
 def run_group(
     group_name: str,
     sql_file: Path,
     output_dir: Path,
     warehouses: tuple[str, ...] = WAREHOUSES,
+    snowflake_raw_events_compare: bool = False,
+    snowflake_raw_events_fail_on_mismatch: bool = True,
 ) -> None:
     if group_name not in GROUPS:
         raise RuntimeError(f"Unknown query group: {group_name}")
@@ -1427,11 +1690,12 @@ def run_group(
     collected_latencies: list[float] = []
 
     logger.info(
-        "Running metrics group=%s warehouses=%s sql_file=%s output_dir=%s",
+        "Running metrics group=%s warehouses=%s sql_file=%s output_dir=%s snowflake_raw_events_compare=%s",
         group_name,
         warehouses,
         sql_file,
         output_dir,
+        snowflake_raw_events_compare,
     )
 
     for query_id in GROUPS[group_name]:
@@ -1454,6 +1718,83 @@ def run_group(
                 duration_seconds,
                 latency_info,
             )
+
+            if warehouse == "snowflake" and snowflake_raw_events_compare:
+                raw_definition = QueryDefinition(
+                    query_id=definition.query_id,
+                    slug=definition.slug,
+                    warehouse=SNOWFLAKE_RAW_EVENTS_WAREHOUSE_LABEL,
+                    sql=build_snowflake_raw_events_sql(definition.sql),
+                )
+                raw_started = perf_counter()
+                raw_execution_result = fetch_snowflake_dataframe(raw_definition.sql)
+                raw_duration_seconds = perf_counter() - raw_started
+                raw_calculated_at_utc = datetime.now(UTC)
+                raw_latest_data_used_at_utc = fetch_snowflake_raw_events_latest_data_used_timestamp()
+                raw_latency_info = build_metric_latency_info(
+                    raw_calculated_at_utc,
+                    raw_latest_data_used_at_utc,
+                )
+                write_result_files(
+                    output_dir,
+                    group_name,
+                    SNOWFLAKE_RAW_EVENTS_WAREHOUSE_LABEL,
+                    raw_definition,
+                    QueryExecutionResult(
+                        dataframe=raw_execution_result.dataframe,
+                        data_volume_bytes=raw_execution_result.data_volume_bytes,
+                        data_volume_source=raw_execution_result.data_volume_source,
+                        query_id=raw_execution_result.query_id,
+                        result_cache_hit=raw_execution_result.result_cache_hit,
+                        returned_bytes=raw_execution_result.returned_bytes,
+                        extra_metadata={
+                            **(raw_execution_result.extra_metadata or {}),
+                            "snowflake_raw_events_table_used": (
+                                f"{SNOWFLAKE_DEFAULT_SCHEMA}.{SNOWFLAKE_OPERATIONAL_EVENTS_TABLE}"
+                            ),
+                            "snowflake_raw_events_cte_file": str(snowflake_raw_events_cte_file()),
+                            "snowflake_raw_events_source": "immutable_operational_events",
+                        },
+                    ),
+                    raw_duration_seconds,
+                    raw_latency_info,
+                )
+                comparison = compare_metric_dataframes(
+                    execution_result.dataframe,
+                    raw_execution_result.dataframe,
+                )
+                comparison_path = write_snowflake_raw_events_comparison_file(
+                    output_dir,
+                    group_name,
+                    definition,
+                    comparison,
+                    execution_result,
+                    raw_execution_result,
+                    raw_calculated_at_utc,
+                )
+                if comparison["matched"]:
+                    logger.info(
+                        "Snowflake raw-events comparison matched: group=%s query=q%02d slug=%s path=%s",
+                        group_name,
+                        definition.query_id,
+                        definition.slug,
+                        comparison_path,
+                    )
+                else:
+                    logger.warning(
+                        "Snowflake raw-events comparison mismatch: group=%s query=q%02d slug=%s path=%s reason=%s",
+                        group_name,
+                        definition.query_id,
+                        definition.slug,
+                        comparison_path,
+                        comparison.get("message"),
+                    )
+                    if snowflake_raw_events_fail_on_mismatch:
+                        raise RuntimeError(
+                            "Snowflake raw-events comparison mismatch for "
+                            f"group={group_name} q{definition.query_id:02d} {definition.slug}; "
+                            f"details={comparison_path}"
+                        )
 
     if collected_latencies:
         average_latency_seconds = sum(collected_latencies) / len(collected_latencies)
@@ -1500,6 +1841,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=default_warehouses,
         help="Subset of warehouses to execute",
     )
+    parser.add_argument(
+        "--snowflake-raw-events-compare",
+        action=argparse.BooleanOptionalAction,
+        default=config_bool("METRICS_SNOWFLAKE_RAW_EVENTS_COMPARE", False, METRICS_ENV_VALUES),
+        help=(
+            "For Snowflake runs, also execute a raw OPERATIONAL_EVENTS variant "
+            "and compare it with the normal operational-table result"
+        ),
+    )
+    parser.add_argument(
+        "--snowflake-raw-events-fail-on-mismatch",
+        action=argparse.BooleanOptionalAction,
+        default=config_bool(
+            "METRICS_SNOWFLAKE_RAW_EVENTS_FAIL_ON_MISMATCH",
+            True,
+            METRICS_ENV_VALUES,
+        ),
+        help="Fail the process when Snowflake baseline and raw-event results differ",
+    )
     return parser.parse_args(argv)
 
 
@@ -1514,6 +1874,8 @@ def main(argv: list[str] | None = None) -> int:
         sql_file=Path(args.sql_file).expanduser(),
         output_dir=Path(args.output_dir).expanduser(),
         warehouses=tuple(args.warehouses),
+        snowflake_raw_events_compare=args.snowflake_raw_events_compare,
+        snowflake_raw_events_fail_on_mismatch=args.snowflake_raw_events_fail_on_mismatch,
     )
     return 0
 

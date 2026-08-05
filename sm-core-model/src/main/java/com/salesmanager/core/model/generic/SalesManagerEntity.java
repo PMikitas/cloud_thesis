@@ -4,7 +4,12 @@ import java.io.Serializable;
 import java.text.Collator;
 import java.util.Locale;
 
+import javax.persistence.EntityListeners;
+import javax.persistence.MappedSuperclass;
+
 import org.hibernate.Hibernate;
+
+import com.salesmanager.core.model.operational.OperationalEventEntityListener;
 
 
 /**
@@ -12,6 +17,8 @@ import org.hibernate.Hibernate;
  *
  * @param <E> type de l'entité
  */
+@MappedSuperclass
+@EntityListeners(value = OperationalEventEntityListener.class)
 public abstract class SalesManagerEntity<K extends Serializable & Comparable<K>, E extends SalesManagerEntity<K, ?>>
 		implements Serializable, Comparable<E> {
 
