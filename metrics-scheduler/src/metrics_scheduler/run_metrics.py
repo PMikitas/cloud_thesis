@@ -1679,10 +1679,17 @@ def run_group(
     output_dir: Path,
     warehouses: tuple[str, ...] = WAREHOUSES,
     snowflake_raw_events_compare: bool = False,
+    snowflake_raw_events_only: bool = False,
     snowflake_raw_events_fail_on_mismatch: bool = True,
 ) -> None:
     if group_name not in GROUPS:
         raise RuntimeError(f"Unknown query group: {group_name}")
+
+    if snowflake_raw_events_only and snowflake_raw_events_compare:
+        logger.warning(
+            "Snowflake raw-events-only mode is enabled; raw-events comparison will be skipped"
+        )
+        snowflake_raw_events_compare = False
 
     definitions = expand_translated_definitions(load_query_definitions(sql_file), warehouses)
     validate_group_coverage(definitions, group_name, warehouses)
@@ -1690,18 +1697,62 @@ def run_group(
     collected_latencies: list[float] = []
 
     logger.info(
-        "Running metrics group=%s warehouses=%s sql_file=%s output_dir=%s snowflake_raw_events_compare=%s",
+        "Running metrics group=%s warehouses=%s sql_file=%s output_dir=%s "
+        "snowflake_raw_events_compare=%s snowflake_raw_events_only=%s",
         group_name,
         warehouses,
         sql_file,
         output_dir,
         snowflake_raw_events_compare,
+        snowflake_raw_events_only,
     )
 
     for query_id in GROUPS[group_name]:
         for warehouse in warehouses:
             definition = resolve_definition(definitions, query_id, warehouse)
             started = perf_counter()
+
+            if warehouse == "snowflake" and snowflake_raw_events_only:
+                raw_definition = QueryDefinition(
+                    query_id=definition.query_id,
+                    slug=definition.slug,
+                    warehouse=warehouse,
+                    sql=build_snowflake_raw_events_sql(definition.sql),
+                )
+                raw_execution_result = fetch_snowflake_dataframe(raw_definition.sql)
+                duration_seconds = perf_counter() - started
+                calculated_at_utc = datetime.now(UTC)
+                latest_data_used_at_utc = fetch_snowflake_raw_events_latest_data_used_timestamp()
+                latency_info = build_metric_latency_info(calculated_at_utc, latest_data_used_at_utc)
+                if latency_info.latency_seconds is not None:
+                    collected_latencies.append(latency_info.latency_seconds)
+                write_result_files(
+                    output_dir,
+                    group_name,
+                    warehouse,
+                    raw_definition,
+                    QueryExecutionResult(
+                        dataframe=raw_execution_result.dataframe,
+                        data_volume_bytes=raw_execution_result.data_volume_bytes,
+                        data_volume_source=raw_execution_result.data_volume_source,
+                        query_id=raw_execution_result.query_id,
+                        result_cache_hit=raw_execution_result.result_cache_hit,
+                        returned_bytes=raw_execution_result.returned_bytes,
+                        extra_metadata={
+                            **(raw_execution_result.extra_metadata or {}),
+                            "snowflake_metrics_mode": "raw_operational_events_only",
+                            "snowflake_raw_events_table_used": (
+                                f"{SNOWFLAKE_DEFAULT_SCHEMA}.{SNOWFLAKE_OPERATIONAL_EVENTS_TABLE}"
+                            ),
+                            "snowflake_raw_events_cte_file": str(snowflake_raw_events_cte_file()),
+                            "snowflake_raw_events_source": "immutable_operational_events",
+                        },
+                    ),
+                    duration_seconds,
+                    latency_info,
+                )
+                continue
+
             execution_result = execute_query_for_warehouse(warehouse, definition.sql)
             duration_seconds = perf_counter() - started
             calculated_at_utc = datetime.now(UTC)
@@ -1851,6 +1902,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--snowflake-raw-events-only",
+        action=argparse.BooleanOptionalAction,
+        default=config_bool("METRICS_SNOWFLAKE_RAW_EVENTS_ONLY", False, METRICS_ENV_VALUES),
+        help=(
+            "For Snowflake runs, execute metrics against immutable OPERATIONAL_EVENTS only "
+            "and skip the normal operational-table query"
+        ),
+    )
+    parser.add_argument(
         "--snowflake-raw-events-fail-on-mismatch",
         action=argparse.BooleanOptionalAction,
         default=config_bool(
@@ -1875,6 +1935,7 @@ def main(argv: list[str] | None = None) -> int:
         output_dir=Path(args.output_dir).expanduser(),
         warehouses=tuple(args.warehouses),
         snowflake_raw_events_compare=args.snowflake_raw_events_compare,
+        snowflake_raw_events_only=args.snowflake_raw_events_only,
         snowflake_raw_events_fail_on_mismatch=args.snowflake_raw_events_fail_on_mismatch,
     )
     return 0
