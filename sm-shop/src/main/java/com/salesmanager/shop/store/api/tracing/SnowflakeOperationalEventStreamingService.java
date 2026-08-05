@@ -80,6 +80,15 @@ public class SnowflakeOperationalEventStreamingService {
     @Value("${snowflake.operational.events.max.flush.duration.ms:1000}")
     private long maxFlushDurationMs;
 
+    @Value("${snowflake.operational.events.outbox.purge.enabled:true}")
+    private boolean purgeSentOutboxEnabled;
+
+    @Value("${snowflake.operational.events.outbox.purge.retention.ms:300000}")
+    private long purgeSentOutboxRetentionMs;
+
+    @Value("${snowflake.operational.events.outbox.purge.batch.size:10000}")
+    private int purgeSentOutboxBatchSize;
+
     @Value("${snowflake.private.key.path:/secrets/snowflake/ecomm_sf_key.p8}")
     private String privateKeyPath;
 
@@ -99,6 +108,7 @@ public class SnowflakeOperationalEventStreamingService {
     private final AtomicLong insertAttempts = new AtomicLong();
     private final AtomicLong insertedEvents = new AtomicLong();
     private final AtomicLong failedEvents = new AtomicLong();
+    private final AtomicLong purgedOutboxRows = new AtomicLong();
     private final AtomicLong reopenedChannels = new AtomicLong();
     private final AtomicBoolean unavailableLogged = new AtomicBoolean();
 
@@ -194,6 +204,40 @@ public class SnowflakeOperationalEventStreamingService {
                     batches >= maxBatches,
                     System.nanoTime() >= deadlineNanos
             );
+        }
+    }
+
+    @Scheduled(fixedDelayString = "${snowflake.operational.events.outbox.purge.fixed.delay.ms:10000}")
+    public void purgeSentOutboxRows() {
+        if (!enabled || !purgeSentOutboxEnabled) {
+            return;
+        }
+
+        try {
+            int batchLimit = Math.max(1, purgeSentOutboxBatchSize);
+            long retentionMs = Math.max(0L, purgeSentOutboxRetentionMs);
+            Date cutoff = new Date(System.currentTimeMillis() - retentionMs);
+            Integer purged = transactionTemplate.execute(status -> entityManager
+                    .createNativeQuery(
+                            "DELETE FROM OPERATIONAL_EVENT_OUTBOX " +
+                                    "WHERE SENT_AT IS NOT NULL AND SENT_AT < ? " +
+                                    "ORDER BY OUTBOX_ID LIMIT ?"
+                    )
+                    .setParameter(1, cutoff)
+                    .setParameter(2, batchLimit)
+                    .executeUpdate());
+            if (purged != null && purged > 0) {
+                long totalPurged = purgedOutboxRows.addAndGet(purged);
+                LOGGER.info(
+                        "Purged sent Snowflake operational outbox rows count={} totalPurged={} retentionMs={} batchLimit={}",
+                        purged,
+                        totalPurged,
+                        retentionMs,
+                        batchLimit
+                );
+            }
+        } catch (Exception e) {
+            LOGGER.warn("Could not purge sent Snowflake operational outbox rows", e);
         }
     }
 
