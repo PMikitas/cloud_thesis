@@ -5,6 +5,10 @@
 # Avoid reverse DNS lookups on client connect/auth.
 skip-name-resolve
 
+# This benchmark database is disposable and is not replicated. Binary logs can
+# grow extremely quickly under the immutable operational-event write load.
+skip-log-bin
+
 # Use more RAM for hot InnoDB data/pages on this host.
 innodb_buffer_pool_size = 8G
 innodb_buffer_pool_instances = 8

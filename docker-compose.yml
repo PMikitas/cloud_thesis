@@ -3,6 +3,8 @@ services:
     image: mysql:8.0
     container_name: shopizer-db
     restart: unless-stopped
+    command:
+      - --skip-log-bin
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_dev_pass}
       MYSQL_DATABASE: SALESMANAGER
