@@ -46,6 +46,8 @@ services:
         -Ddb.maxLifetime=1740000
         -Ddb.validationTimeout=5000
         -Ddb.leakDetectionThreshold=20000
+        -Dshopizer.product.listing.query.timeout.ms=10000
+        -Dshopizer.product.listing.legacyFallback.enabled=false
         -Dserver.tomcat.threads.max=80
         -Dserver.tomcat.threads.min-spare=20
         -Dserver.tomcat.accept-count=50

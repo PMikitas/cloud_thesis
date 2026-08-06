@@ -40,6 +40,7 @@ public class SnowflakeOperationalEventStreamingService {
     private static final long INSERTED_LOG_INTERVAL = 1_000;
     private static final long FAILED_LOG_INTERVAL = 100;
     private static final int OUTBOX_UPDATE_CHUNK_SIZE = 5_000;
+    private static final int DEFAULT_OUTBOX_PURGE_DELETE_CHUNK_SIZE = 500;
 
     @Value("${snowflake.operational.events.enabled:false}")
     private boolean enabled;
@@ -88,6 +89,12 @@ public class SnowflakeOperationalEventStreamingService {
 
     @Value("${snowflake.operational.events.outbox.purge.batch.size:10000}")
     private int purgeSentOutboxBatchSize;
+
+    @Value("${snowflake.operational.events.outbox.purge.delete.chunk.size:500}")
+    private int purgeSentOutboxDeleteChunkSize;
+
+    @Value("${snowflake.operational.events.outbox.purge.query.timeout.ms:5000}")
+    private int purgeSentOutboxQueryTimeoutMs;
 
     @Value("${snowflake.private.key.path:/secrets/snowflake/ecomm_sf_key.p8}")
     private String privateKeyPath;
@@ -217,28 +224,68 @@ public class SnowflakeOperationalEventStreamingService {
             int batchLimit = Math.max(1, purgeSentOutboxBatchSize);
             long retentionMs = Math.max(0L, purgeSentOutboxRetentionMs);
             Date cutoff = new Date(System.currentTimeMillis() - retentionMs);
-            Integer purged = transactionTemplate.execute(status -> entityManager
-                    .createNativeQuery(
-                            "DELETE FROM OPERATIONAL_EVENT_OUTBOX " +
-                                    "WHERE SENT_AT IS NOT NULL AND SENT_AT < ? " +
-                                    "ORDER BY OUTBOX_ID LIMIT ?"
-                    )
-                    .setParameter(1, cutoff)
-                    .setParameter(2, batchLimit)
-                    .executeUpdate());
+            List<Long> idsToPurge = selectSentOutboxIdsToPurge(cutoff, batchLimit);
+            if (idsToPurge.isEmpty()) {
+                return;
+            }
+
+            Integer purged = transactionTemplate.execute(status -> deleteSentOutboxIds(idsToPurge));
             if (purged != null && purged > 0) {
                 long totalPurged = purgedOutboxRows.addAndGet(purged);
                 LOGGER.info(
-                        "Purged sent Snowflake operational outbox rows count={} totalPurged={} retentionMs={} batchLimit={}",
+                        "Purged sent Snowflake operational outbox rows count={} totalPurged={} retentionMs={} batchLimit={} deleteChunkSize={}",
                         purged,
                         totalPurged,
                         retentionMs,
-                        batchLimit
+                        batchLimit,
+                        effectivePurgeDeleteChunkSize()
                 );
             }
         } catch (Exception e) {
             LOGGER.warn("Could not purge sent Snowflake operational outbox rows", e);
         }
+    }
+
+    private List<Long> selectSentOutboxIdsToPurge(Date cutoff, int batchLimit) {
+        @SuppressWarnings("unchecked")
+        List<Object> rows = entityManager
+                .createNativeQuery(
+                        "SELECT OUTBOX_ID FROM OPERATIONAL_EVENT_OUTBOX " +
+                                "WHERE SENT_AT IS NOT NULL AND SENT_AT < ? " +
+                                "ORDER BY OUTBOX_ID LIMIT ?"
+                )
+                .setParameter(1, cutoff)
+                .setParameter(2, batchLimit)
+                .setHint("javax.persistence.query.timeout", Math.max(1, purgeSentOutboxQueryTimeoutMs))
+                .getResultList();
+
+        List<Long> ids = new ArrayList<>(rows.size());
+        for (Object row : rows) {
+            if (row instanceof Number) {
+                ids.add(((Number) row).longValue());
+            }
+        }
+        return ids;
+    }
+
+    private int deleteSentOutboxIds(List<Long> idsToPurge) {
+        int deleted = 0;
+        int chunkSize = effectivePurgeDeleteChunkSize();
+        for (int start = 0; start < idsToPurge.size(); start += chunkSize) {
+            deleted += entityManager
+                    .createQuery("delete from OperationalEventOutbox e where e.id in :ids")
+                    .setParameter("ids", idsToPurge.subList(start, Math.min(start + chunkSize, idsToPurge.size())))
+                    .setHint("javax.persistence.query.timeout", Math.max(1, purgeSentOutboxQueryTimeoutMs))
+                    .executeUpdate();
+        }
+        return deleted;
+    }
+
+    private int effectivePurgeDeleteChunkSize() {
+        if (purgeSentOutboxDeleteChunkSize <= 0) {
+            return DEFAULT_OUTBOX_PURGE_DELETE_CHUNK_SIZE;
+        }
+        return Math.min(purgeSentOutboxDeleteChunkSize, Math.max(1, purgeSentOutboxBatchSize));
     }
 
     private BatchResult flushNextBatch(int effectiveBatchSize) {
