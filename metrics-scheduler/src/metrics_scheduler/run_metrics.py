@@ -13,7 +13,7 @@ from numbers import Number
 from pathlib import Path
 from time import perf_counter, sleep
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import pandas as pd
 import psycopg2
@@ -141,6 +141,14 @@ DEFAULT_OUTPUT_DIR = Path(os.environ.get("METRICS_OUTPUT_DIR", "/app/results"))
 DEFAULT_SNOWFLAKE_RAW_EVENTS_CTE_FILE = METRICS_ROOT / "snowflake_raw_event_state.sql"
 SNOWFLAKE_RAW_EVENTS_WAREHOUSE_LABEL = "snowflake_raw_events"
 SNOWFLAKE_RAW_EVENTS_COMPARISON_LABEL = "snowflake_raw_events_comparison"
+IMMUTABLE_BACKFILL_NAME_PREFIX = "immutable_operational_events_baseline_v1"
+DEFAULT_IMMUTABLE_BACKFILL_TABLES = (
+    "CUSTOMER",
+    "PRODUCT",
+    "PRODUCT_DESCRIPTION",
+    "PRODUCT_AVAILABILITY",
+    "PRODUCT_PRICE",
+)
 SNOWFLAKE_RAW_OPERATIONAL_TABLES = frozenset(
     {
         "customer",
@@ -157,6 +165,209 @@ SNOWFLAKE_RAW_OPERATIONAL_TABLES = frozenset(
         "sm_transaction",
     }
 )
+
+IMMUTABLE_BACKFILL_TABLE_SQL: dict[str, dict[str, str]] = {
+    "CUSTOMER": {
+        "entity_name": "com.salesmanager.core.model.customer.Customer",
+        "id_column": "CUSTOMER_ID",
+        "count_sql": "SELECT COUNT(*) FROM CUSTOMER",
+        "insert_sql": """
+            INSERT INTO OPERATIONAL_EVENT_OUTBOX
+              (EVENT_ID, OPERATION, ENTITY_NAME, TABLE_NAME, ENTITY_ID, OCCURRED_AT, CREATED_AT, ATTEMPT_COUNT, PAYLOAD)
+            SELECT
+              event_id,
+              'INSERT',
+              'com.salesmanager.core.model.customer.Customer',
+              'CUSTOMER',
+              CAST(CUSTOMER_ID AS CHAR),
+              UTC_TIMESTAMP(3),
+              UTC_TIMESTAMP(3),
+              0,
+              JSON_OBJECT(
+                'schema_version', 1,
+                'event_id', event_id,
+                'occurred_at', DATE_FORMAT(UTC_TIMESTAMP(3), '%Y-%m-%dT%H:%i:%s.%fZ'),
+                'operation', 'INSERT',
+                'entity_name', 'com.salesmanager.core.model.customer.Customer',
+                'table_name', 'CUSTOMER',
+                'entity_id', CAST(CUSTOMER_ID AS CHAR),
+                'columns', JSON_OBJECT(
+                  'CUSTOMER_ID', CUSTOMER_ID,
+                  'CUSTOMER_EMAIL_ADDRESS', CUSTOMER_EMAIL_ADDRESS,
+                  'CUSTOMER_NICK', CUSTOMER_NICK,
+                  'CUSTOMER_ANONYMOUS', CAST(CUSTOMER_ANONYMOUS AS UNSIGNED),
+                  'MERCHANT_ID', MERCHANT_ID,
+                  'DATE_CREATED', DATE_FORMAT(DATE_CREATED, '%Y-%m-%dT%H:%i:%s.%fZ'),
+                  'DATE_MODIFIED', DATE_FORMAT(DATE_MODIFIED, '%Y-%m-%dT%H:%i:%s.%fZ')
+                )
+              )
+            FROM (
+              SELECT UUID() AS event_id, c.*
+              FROM CUSTOMER c
+            ) customer_snapshot
+        """,
+    },
+    "PRODUCT": {
+        "entity_name": "com.salesmanager.core.model.catalog.product.Product",
+        "id_column": "PRODUCT_ID",
+        "count_sql": "SELECT COUNT(*) FROM PRODUCT",
+        "insert_sql": """
+            INSERT INTO OPERATIONAL_EVENT_OUTBOX
+              (EVENT_ID, OPERATION, ENTITY_NAME, TABLE_NAME, ENTITY_ID, OCCURRED_AT, CREATED_AT, ATTEMPT_COUNT, PAYLOAD)
+            SELECT
+              event_id,
+              'INSERT',
+              'com.salesmanager.core.model.catalog.product.Product',
+              'PRODUCT',
+              CAST(PRODUCT_ID AS CHAR),
+              UTC_TIMESTAMP(3),
+              UTC_TIMESTAMP(3),
+              0,
+              JSON_OBJECT(
+                'schema_version', 1,
+                'event_id', event_id,
+                'occurred_at', DATE_FORMAT(UTC_TIMESTAMP(3), '%Y-%m-%dT%H:%i:%s.%fZ'),
+                'operation', 'INSERT',
+                'entity_name', 'com.salesmanager.core.model.catalog.product.Product',
+                'table_name', 'PRODUCT',
+                'entity_id', CAST(PRODUCT_ID AS CHAR),
+                'columns', JSON_OBJECT(
+                  'PRODUCT_ID', PRODUCT_ID,
+                  'SKU', SKU,
+                  'AVAILABLE', CAST(AVAILABLE AS UNSIGNED),
+                  'MERCHANT_ID', MERCHANT_ID,
+                  'QUANTITY_ORDERED', QUANTITY_ORDERED,
+                  'DATE_CREATED', DATE_FORMAT(DATE_CREATED, '%Y-%m-%dT%H:%i:%s.%fZ'),
+                  'DATE_MODIFIED', DATE_FORMAT(DATE_MODIFIED, '%Y-%m-%dT%H:%i:%s.%fZ')
+                )
+              )
+            FROM (
+              SELECT UUID() AS event_id, p.*
+              FROM PRODUCT p
+            ) product_snapshot
+        """,
+    },
+    "PRODUCT_DESCRIPTION": {
+        "entity_name": "com.salesmanager.core.model.catalog.product.description.ProductDescription",
+        "id_column": "DESCRIPTION_ID",
+        "count_sql": "SELECT COUNT(*) FROM PRODUCT_DESCRIPTION",
+        "insert_sql": """
+            INSERT INTO OPERATIONAL_EVENT_OUTBOX
+              (EVENT_ID, OPERATION, ENTITY_NAME, TABLE_NAME, ENTITY_ID, OCCURRED_AT, CREATED_AT, ATTEMPT_COUNT, PAYLOAD)
+            SELECT
+              event_id,
+              'INSERT',
+              'com.salesmanager.core.model.catalog.product.description.ProductDescription',
+              'PRODUCT_DESCRIPTION',
+              CAST(DESCRIPTION_ID AS CHAR),
+              UTC_TIMESTAMP(3),
+              UTC_TIMESTAMP(3),
+              0,
+              JSON_OBJECT(
+                'schema_version', 1,
+                'event_id', event_id,
+                'occurred_at', DATE_FORMAT(UTC_TIMESTAMP(3), '%Y-%m-%dT%H:%i:%s.%fZ'),
+                'operation', 'INSERT',
+                'entity_name', 'com.salesmanager.core.model.catalog.product.description.ProductDescription',
+                'table_name', 'PRODUCT_DESCRIPTION',
+                'entity_id', CAST(DESCRIPTION_ID AS CHAR),
+                'columns', JSON_OBJECT(
+                  'DESCRIPTION_ID', DESCRIPTION_ID,
+                  'PRODUCT_ID', PRODUCT_ID,
+                  'LANGUAGE_ID', LANGUAGE_ID,
+                  'NAME', NAME,
+                  'TITLE', TITLE
+                )
+              )
+            FROM (
+              SELECT UUID() AS event_id, pd.*
+              FROM PRODUCT_DESCRIPTION pd
+            ) product_description_snapshot
+        """,
+    },
+    "PRODUCT_AVAILABILITY": {
+        "entity_name": "com.salesmanager.core.model.catalog.product.availability.ProductAvailability",
+        "id_column": "PRODUCT_AVAIL_ID",
+        "count_sql": "SELECT COUNT(*) FROM PRODUCT_AVAILABILITY",
+        "insert_sql": """
+            INSERT INTO OPERATIONAL_EVENT_OUTBOX
+              (EVENT_ID, OPERATION, ENTITY_NAME, TABLE_NAME, ENTITY_ID, OCCURRED_AT, CREATED_AT, ATTEMPT_COUNT, PAYLOAD)
+            SELECT
+              event_id,
+              'INSERT',
+              'com.salesmanager.core.model.catalog.product.availability.ProductAvailability',
+              'PRODUCT_AVAILABILITY',
+              CAST(PRODUCT_AVAIL_ID AS CHAR),
+              UTC_TIMESTAMP(3),
+              UTC_TIMESTAMP(3),
+              0,
+              JSON_OBJECT(
+                'schema_version', 1,
+                'event_id', event_id,
+                'occurred_at', DATE_FORMAT(UTC_TIMESTAMP(3), '%Y-%m-%dT%H:%i:%s.%fZ'),
+                'operation', 'INSERT',
+                'entity_name', 'com.salesmanager.core.model.catalog.product.availability.ProductAvailability',
+                'table_name', 'PRODUCT_AVAILABILITY',
+                'entity_id', CAST(PRODUCT_AVAIL_ID AS CHAR),
+                'columns', JSON_OBJECT(
+                  'PRODUCT_AVAIL_ID', PRODUCT_AVAIL_ID,
+                  'PRODUCT_ID', PRODUCT_ID,
+                  'SKU', SKU,
+                  'AVAILABLE', CAST(AVAILABLE AS UNSIGNED),
+                  'QUANTITY', QUANTITY,
+                  'QUANTITY_ORD_MIN', QUANTITY_ORD_MIN,
+                  'QUANTITY_ORD_MAX', QUANTITY_ORD_MAX,
+                  'MERCHANT_ID', MERCHANT_ID,
+                  'DATE_AVAILABLE', DATE_FORMAT(DATE_AVAILABLE, '%Y-%m-%dT%H:%i:%s.%fZ')
+                )
+              )
+            FROM (
+              SELECT UUID() AS event_id, pa.*
+              FROM PRODUCT_AVAILABILITY pa
+            ) product_availability_snapshot
+        """,
+    },
+    "PRODUCT_PRICE": {
+        "entity_name": "com.salesmanager.core.model.catalog.product.price.ProductPrice",
+        "id_column": "PRODUCT_PRICE_ID",
+        "count_sql": "SELECT COUNT(*) FROM PRODUCT_PRICE",
+        "insert_sql": """
+            INSERT INTO OPERATIONAL_EVENT_OUTBOX
+              (EVENT_ID, OPERATION, ENTITY_NAME, TABLE_NAME, ENTITY_ID, OCCURRED_AT, CREATED_AT, ATTEMPT_COUNT, PAYLOAD)
+            SELECT
+              event_id,
+              'INSERT',
+              'com.salesmanager.core.model.catalog.product.price.ProductPrice',
+              'PRODUCT_PRICE',
+              CAST(PRODUCT_PRICE_ID AS CHAR),
+              UTC_TIMESTAMP(3),
+              UTC_TIMESTAMP(3),
+              0,
+              JSON_OBJECT(
+                'schema_version', 1,
+                'event_id', event_id,
+                'occurred_at', DATE_FORMAT(UTC_TIMESTAMP(3), '%Y-%m-%dT%H:%i:%s.%fZ'),
+                'operation', 'INSERT',
+                'entity_name', 'com.salesmanager.core.model.catalog.product.price.ProductPrice',
+                'table_name', 'PRODUCT_PRICE',
+                'entity_id', CAST(PRODUCT_PRICE_ID AS CHAR),
+                'columns', JSON_OBJECT(
+                  'PRODUCT_PRICE_ID', PRODUCT_PRICE_ID,
+                  'PRODUCT_AVAIL_ID', PRODUCT_AVAIL_ID,
+                  'PRODUCT_PRICE_AMOUNT', CAST(PRODUCT_PRICE_AMOUNT AS CHAR),
+                  'PRODUCT_PRICE_SPECIAL_AMOUNT', CAST(PRODUCT_PRICE_SPECIAL_AMOUNT AS CHAR),
+                  'DEFAULT_PRICE', CAST(DEFAULT_PRICE AS UNSIGNED),
+                  'PRODUCT_PRICE_CODE', PRODUCT_PRICE_CODE,
+                  'PRODUCT_PRICE_TYPE', PRODUCT_PRICE_TYPE
+                )
+              )
+            FROM (
+              SELECT UUID() AS event_id, pp.*
+              FROM PRODUCT_PRICE pp
+            ) product_price_snapshot
+        """,
+    },
+}
 
 
 def load_key_value_file(path: Path) -> dict[str, str]:
@@ -194,6 +405,13 @@ def config_bool(name: str, default: bool, *value_maps: dict[str, str]) -> bool:
     if value is None:
         return default
     return value.strip().lower() not in {"false", "0", "no", "off"}
+
+
+def config_csv(name: str, default: tuple[str, ...], *value_maps: dict[str, str]) -> list[str]:
+    value = config_value(name, *value_maps)
+    if not value:
+        return list(default)
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def escape_snowflake_string(value: str) -> str:
@@ -503,6 +721,277 @@ def build_snowflake_connection(query_tag: str | None = None) -> snowflake.connec
             f"ALTER SESSION SET QUERY_TAG = '{escape_snowflake_string(resolved_query_tag)}'"
         )
     return connection
+
+
+def normalize_mysql_dsn(dsn: str) -> str:
+    if dsn.startswith("mysql+"):
+        _, rest = dsn.split("://", 1)
+        return f"mysql://{rest}"
+    return dsn
+
+
+def mysql_connection_params_from_dsn(dsn: str) -> dict[str, Any]:
+    parsed = urlparse(normalize_mysql_dsn(dsn))
+    if parsed.scheme != "mysql":
+        raise ValueError(f"Unsupported MySQL DSN scheme: {parsed.scheme!r}")
+    if not parsed.hostname:
+        raise ValueError("MySQL DSN is missing a hostname")
+    if not parsed.path.strip("/"):
+        raise ValueError("MySQL DSN is missing a database name")
+
+    return {
+        "host": parsed.hostname,
+        "port": parsed.port or 3306,
+        "user": unquote(parsed.username or ""),
+        "password": unquote(parsed.password or ""),
+        "database": parsed.path.strip("/"),
+    }
+
+
+def resolve_metrics_mysql_dsn() -> str:
+    return (
+        config_value("METRICS_MYSQL_DSN", METRICS_ENV_VALUES)
+        or MIGRATION_ENV_VALUES.get("MYSQL_DSN")
+        or "mysql://root:root_dev_pass@shopizer-db:3306/SALESMANAGER"
+    )
+
+
+def immutable_backfill_tables() -> list[str]:
+    configured = config_csv(
+        "METRICS_IMMUTABLE_BACKFILL_TABLES",
+        DEFAULT_IMMUTABLE_BACKFILL_TABLES,
+        METRICS_ENV_VALUES,
+    )
+    tables = [table.strip().upper() for table in configured if table.strip()]
+    unsupported = [table for table in tables if table not in IMMUTABLE_BACKFILL_TABLE_SQL]
+    if unsupported:
+        supported = ", ".join(sorted(IMMUTABLE_BACKFILL_TABLE_SQL))
+        raise RuntimeError(
+            "Unsupported immutable backfill table(s): "
+            f"{', '.join(unsupported)}. Supported tables: {supported}"
+        )
+    return tables
+
+
+def create_immutable_backfill_marker_table(cursor: Any) -> None:
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS OPERATIONAL_EVENT_BACKFILL_STATE (
+          BACKFILL_NAME VARCHAR(128) NOT NULL PRIMARY KEY,
+          TABLE_NAME VARCHAR(128) NOT NULL,
+          ROWS_QUEUED BIGINT NOT NULL,
+          MYSQL_ROWS BIGINT NOT NULL,
+          SNOWFLAKE_DISTINCT_ENTITY_ROWS BIGINT NULL,
+          CREATED_AT TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          LAST_RUN_AT TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
+def immutable_backfill_marker_exists(cursor: Any, table_name: str) -> bool:
+    cursor.execute(
+        "SELECT COUNT(*) FROM OPERATIONAL_EVENT_BACKFILL_STATE WHERE BACKFILL_NAME = %s",
+        (immutable_backfill_name(table_name),),
+    )
+    row = cursor.fetchone()
+    return bool(row and int(row[0]) > 0)
+
+
+def immutable_backfill_name(table_name: str) -> str:
+    return f"{IMMUTABLE_BACKFILL_NAME_PREFIX}:{table_name.lower()}"
+
+
+def mark_immutable_backfill(
+    cursor: Any,
+    table_name: str,
+    rows_queued: int,
+    mysql_rows: int,
+    snowflake_rows: int | None,
+) -> None:
+    cursor.execute(
+        """
+        INSERT INTO OPERATIONAL_EVENT_BACKFILL_STATE
+          (BACKFILL_NAME, TABLE_NAME, ROWS_QUEUED, MYSQL_ROWS, SNOWFLAKE_DISTINCT_ENTITY_ROWS)
+        VALUES (%s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          TABLE_NAME = VALUES(TABLE_NAME),
+          ROWS_QUEUED = VALUES(ROWS_QUEUED),
+          MYSQL_ROWS = VALUES(MYSQL_ROWS),
+          SNOWFLAKE_DISTINCT_ENTITY_ROWS = VALUES(SNOWFLAKE_DISTINCT_ENTITY_ROWS),
+          LAST_RUN_AT = CURRENT_TIMESTAMP
+        """,
+        (
+            immutable_backfill_name(table_name),
+            table_name,
+            rows_queued,
+            mysql_rows,
+            snowflake_rows,
+        ),
+    )
+
+
+def fetch_mysql_table_count(cursor: Any, table_name: str) -> int:
+    cursor.execute(IMMUTABLE_BACKFILL_TABLE_SQL[table_name]["count_sql"])
+    row = cursor.fetchone()
+    return int(row[0]) if row else 0
+
+
+def fetch_snowflake_operational_event_entity_counts(tables: list[str]) -> dict[str, int]:
+    if not tables:
+        return {}
+
+    schema = safe_identifier(SNOWFLAKE_DEFAULT_SCHEMA, "Snowflake schema")
+    operational_events_table = safe_identifier(
+        SNOWFLAKE_OPERATIONAL_EVENTS_TABLE,
+        "Snowflake operational events table",
+    )
+    counts: dict[str, int] = {}
+    connection = build_snowflake_connection(
+        query_tag=snowflake_query_tag("raw_operational_events_backfill")
+    )
+    try:
+        with connection.cursor() as cursor:
+            for table_name in tables:
+                cursor.execute(
+                    "SELECT COUNT(DISTINCT entity_id) "
+                    f"FROM {schema}.{operational_events_table} "
+                    f"WHERE table_name = '{escape_snowflake_string(table_name)}'"
+                )
+                row = cursor.fetchone()
+                counts[table_name] = int(row[0]) if row else 0
+    finally:
+        connection.close()
+    return counts
+
+
+def wait_for_immutable_backfill_in_snowflake(expectations: dict[str, int]) -> None:
+    if not expectations:
+        return
+
+    wait_seconds = env_int("METRICS_IMMUTABLE_BACKFILL_WAIT_SECONDS", 120)
+    if wait_seconds <= 0:
+        logger.info("Skipping immutable operational-event backfill wait")
+        return
+
+    deadline = perf_counter() + wait_seconds
+    while True:
+        counts = fetch_snowflake_operational_event_entity_counts(list(expectations))
+        missing = {
+            table_name: (expected, counts.get(table_name, 0))
+            for table_name, expected in expectations.items()
+            if expected > 0 and counts.get(table_name, 0) < expected
+        }
+        if not missing:
+            logger.info("Immutable operational-event baseline is present in Snowflake: %s", counts)
+            return
+
+        if perf_counter() >= deadline:
+            details = ", ".join(
+                f"{table}=expected>={expected}, observed={observed}"
+                for table, (expected, observed) in sorted(missing.items())
+            )
+            raise RuntimeError(
+                "Timed out waiting for immutable operational-event baseline in Snowflake: "
+                f"{details}. Check sm-shop operational event flusher logs or set "
+                "METRICS_IMMUTABLE_BACKFILL_WAIT_SECONDS=0 to skip the wait."
+            )
+
+        logger.info("Waiting for immutable operational-event baseline in Snowflake: %s", missing)
+        sleep(min(5, max(1, int(deadline - perf_counter()))))
+
+
+def ensure_immutable_operational_events_backfill() -> None:
+    if not config_bool("METRICS_IMMUTABLE_BACKFILL_ENABLED", True, METRICS_ENV_VALUES):
+        logger.info("Immutable operational-event baseline backfill is disabled")
+        return
+
+    tables = immutable_backfill_tables()
+    if not tables:
+        logger.info("No immutable operational-event baseline tables configured")
+        return
+
+    force = config_bool("METRICS_IMMUTABLE_BACKFILL_FORCE", False, METRICS_ENV_VALUES)
+    mysql_dsn = resolve_metrics_mysql_dsn()
+    mysql_params = mysql_connection_params_from_dsn(mysql_dsn)
+
+    try:
+        import mysql.connector
+    except ImportError as exc:
+        raise RuntimeError(
+            "mysql-connector-python is required for immutable operational-event backfill"
+        ) from exc
+
+    logger.info(
+        "Checking immutable operational-event baseline: tables=%s mysql_host=%s mysql_database=%s force=%s",
+        tables,
+        mysql_params["host"],
+        mysql_params["database"],
+        force,
+    )
+
+    snowflake_counts = fetch_snowflake_operational_event_entity_counts(tables)
+    expectations: dict[str, int] = {}
+    connection = mysql.connector.connect(**mysql_params)
+    try:
+        cursor = connection.cursor(buffered=True)
+        try:
+            create_immutable_backfill_marker_table(cursor)
+            connection.commit()
+
+            for table_name in tables:
+                mysql_rows = fetch_mysql_table_count(cursor, table_name)
+                snowflake_rows = snowflake_counts.get(table_name, 0)
+                if mysql_rows == 0:
+                    logger.info("Skipping immutable baseline table=%s because MySQL has no rows", table_name)
+                    mark_immutable_backfill(cursor, table_name, 0, mysql_rows, snowflake_rows)
+                    connection.commit()
+                    continue
+
+                if not force and snowflake_rows >= mysql_rows:
+                    logger.info(
+                        "Immutable baseline already present for table=%s mysql_rows=%d snowflake_entities=%d",
+                        table_name,
+                        mysql_rows,
+                        snowflake_rows,
+                    )
+                    mark_immutable_backfill(cursor, table_name, 0, mysql_rows, snowflake_rows)
+                    connection.commit()
+                    continue
+
+                if not force and immutable_backfill_marker_exists(cursor, table_name):
+                    logger.info(
+                        "Immutable baseline was already queued for table=%s; waiting for Snowflake "
+                        "mysql_rows=%d snowflake_entities=%d",
+                        table_name,
+                        mysql_rows,
+                        snowflake_rows,
+                    )
+                    expectations[table_name] = mysql_rows
+                    continue
+
+                cursor.execute(IMMUTABLE_BACKFILL_TABLE_SQL[table_name]["insert_sql"])
+                rows_queued = int(cursor.rowcount)
+                mark_immutable_backfill(cursor, table_name, rows_queued, mysql_rows, snowflake_rows)
+                connection.commit()
+                expectations[table_name] = mysql_rows
+                logger.info(
+                    "Queued immutable operational-event baseline table=%s rows_queued=%d mysql_rows=%d "
+                    "snowflake_entities_before=%d",
+                    table_name,
+                    rows_queued,
+                    mysql_rows,
+                    snowflake_rows,
+                )
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+    finally:
+        connection.close()
+
+    wait_for_immutable_backfill_in_snowflake(expectations)
 
 
 def build_snowflake_latest_data_sql(table_name: str) -> str:
@@ -1738,6 +2227,9 @@ def run_group(
         snowflake_raw_events_compare,
         snowflake_raw_events_only,
     )
+
+    if "snowflake" in warehouses and (snowflake_raw_events_only or snowflake_raw_events_compare):
+        ensure_immutable_operational_events_backfill()
 
     for query_id in GROUPS[group_name]:
         for warehouse in warehouses:

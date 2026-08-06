@@ -26,6 +26,7 @@ import com.salesmanager.core.model.catalog.product.relationship.ProductRelations
 import com.salesmanager.core.model.catalog.product.relationship.ProductRelationshipType;
 import com.salesmanager.core.model.merchant.MerchantStore;
 import com.salesmanager.core.model.reference.language.Language;
+import com.salesmanager.shop.mapper.catalog.product.ReadableProductSummaryMapper;
 import com.salesmanager.shop.model.catalog.product.ReadableProduct;
 import com.salesmanager.shop.model.catalog.product.ReadableProductList;
 import com.salesmanager.shop.model.catalog.product.product.PersistableProduct;
@@ -59,6 +60,9 @@ public class ProductFacadeImpl implements ProductFacade {
 	@Inject
 	@Qualifier("img")
 	private ImageFilePath imageUtils;
+
+	@Inject
+	private ReadableProductSummaryMapper readableProductSummaryMapper;
 
 	public void updateProduct(MerchantStore store, PersistableProduct product, Language language) {
 
@@ -128,15 +132,9 @@ public class ProductFacadeImpl implements ProductFacade {
 		
 		List<Product> products = modelProductList.getContent();
 		
-		ReadableProductPopulator populator = new ReadableProductPopulator();
-		populator.setPricingService(pricingService);
-		populator.setimageUtils(imageUtils);
-
 		ReadableProductList productList = new ReadableProductList();
 		for (Product product : products) {
-
-			// create new proxy product
-			ReadableProduct readProduct = populator.populate(product, new ReadableProduct(), store, language);
+			ReadableProduct readProduct = readableProductSummaryMapper.convert(product, store, language);
 			productList.getProducts().add(readProduct);
 
 		}

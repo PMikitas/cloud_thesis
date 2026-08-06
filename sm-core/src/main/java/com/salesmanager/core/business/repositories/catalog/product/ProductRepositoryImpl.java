@@ -33,6 +33,12 @@ import com.salesmanager.core.model.tax.taxclass.TaxClass;
 public class ProductRepositoryImpl implements ProductRepositoryCustom {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(ProductRepositoryImpl.class);
+	private static final int PRODUCT_LISTING_QUERY_TIMEOUT_MS =
+			Integer.getInteger("shopizer.product.listing.query.timeout.ms", 10_000);
+	private static final int PRODUCT_LISTING_QUERY_TIMEOUT_SECONDS =
+			Math.max(1, (PRODUCT_LISTING_QUERY_TIMEOUT_MS + 999) / 1000);
+	private static final boolean PRODUCT_LISTING_LEGACY_FALLBACK_ENABLED =
+			Boolean.parseBoolean(System.getProperty("shopizer.product.listing.legacyFallback.enabled", "false"));
 
 	@PersistenceContext
 	private EntityManager em;
@@ -731,7 +737,7 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
 		
 		
 
-		Query countQ = this.em.createQuery(countBuilderSelect.toString() + countBuilderWhere.toString());
+		Query countQ = withProductListingTimeout(this.em.createQuery(countBuilderSelect.toString() + countBuilderWhere.toString()));
 
 		countQ.setParameter("mId", store.getId());
 
@@ -813,7 +819,17 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
 				}
 			}
 			LOGGER.warn(
-					"Optimized shop listing returned an empty page unexpectedly for store [{}], page [{}], count [{}]. Falling back to legacy listing query.",
+					"Optimized shop listing returned an empty page unexpectedly for store [{}], page [{}], count [{}].",
+					store.getCode(), criteria.getStartPage(), criteria.getPageSize());
+			if (!PRODUCT_LISTING_LEGACY_FALLBACK_ENABLED) {
+				LOGGER.warn(
+						"Legacy shop listing fallback is disabled to protect the database during load tests. Returning an empty page for store [{}], page [{}], count [{}].",
+						store.getCode(), criteria.getStartPage(), criteria.getPageSize());
+				productList.setProducts(new ArrayList<Product>());
+				return productList;
+			}
+			LOGGER.warn(
+					"Legacy shop listing fallback is enabled for store [{}], page [{}], count [{}].",
 					store.getCode(), criteria.getStartPage(), criteria.getPageSize());
 		}
 
@@ -961,7 +977,7 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
 		qs.append(" order by p.sortOrder asc");
 
 		String hql = qs.toString();
-		Query q = this.em.createQuery(hql);
+		Query q = withProductListingTimeout(this.em.createQuery(hql));
 
 		if (criteria.getLanguage() != null && !criteria.getLanguage().equals("_all")) {
 			q.setParameter("lang", language.getCode());
@@ -1097,7 +1113,7 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
 
 		qs.append(" order by p.sortOrder asc");
 
-		Query q = this.em.createQuery(qs.toString());
+		Query q = withProductListingTimeout(this.em.createQuery(qs.toString()));
 		q.setParameter("mId", store.getId());
 
 		if (criteria.getLanguage() != null && !criteria.getLanguage().equals("_all")) {
@@ -1157,50 +1173,13 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
 		qs.append("left join fetch p.availabilities pa ");
 		qs.append("left join fetch pa.prices pap ");
 		qs.append("left join fetch pap.descriptions papd ");
-		qs.append("left join fetch p.categories categs ");
-		qs.append("left join fetch categs.descriptions cd ");
 		qs.append("left join fetch p.images images ");
-		qs.append("left join fetch p.manufacturer manuf ");
-		qs.append("left join fetch manuf.descriptions manufd ");
-		qs.append("left join fetch p.type type ");
-		qs.append("left join fetch type.descriptions typedesc ");
-		qs.append("left join fetch p.attributes pattr ");
-		qs.append("left join fetch pattr.productOption po ");
-		qs.append("left join fetch po.descriptions pod ");
-		qs.append("left join fetch pattr.productOptionValue pov ");
-		qs.append("left join fetch pov.descriptions povd ");
-		qs.append("left join fetch p.variants pinst ");
-		qs.append("left join fetch pinst.variation pv ");
-		qs.append("left join fetch pv.productOption pvpo ");
-		qs.append("left join fetch pv.productOptionValue pvpov ");
-		qs.append("left join fetch pvpo.descriptions pvpod ");
-		qs.append("left join fetch pvpov.descriptions pvpovd ");
-		qs.append("left join fetch pinst.variationValue pvv ");
-		qs.append("left join fetch pvv.productOption pvvpo ");
-		qs.append("left join fetch pvv.productOptionValue pvvpov ");
-		qs.append("left join fetch pvvpo.descriptions povvpod ");
-		qs.append("left join fetch pvvpov.descriptions povvpovd ");
-		qs.append("left join fetch pinst.availabilities pinsta ");
-		qs.append("left join fetch pinsta.prices pinstap ");
-		qs.append("left join fetch pinstap.descriptions pinstapdesc ");
-		qs.append("left join fetch pinst.productVariantGroup pinstg ");
-		qs.append("left join fetch pinstg.images pinstgimg ");
 		qs.append("where p.id in (:pId) ");
 		qs.append("and pd.language.code=:lang ");
 		qs.append("and (papd is null or papd.language.code=:lang) ");
-		qs.append("and (cd is null or cd.language.code=:lang) ");
-		qs.append("and (manufd is null or manufd.language.code=:lang) ");
-		qs.append("and (typedesc is null or typedesc.language.code=:lang) ");
-		qs.append("and (pod is null or pod.language.code=:lang) ");
-		qs.append("and (povd is null or povd.language.code=:lang) ");
-		qs.append("and (pvpod is null or pvpod.language.code=:lang) ");
-		qs.append("and (pvpovd is null or pvpovd.language.code=:lang) ");
-		qs.append("and (povvpod is null or povvpod.language.code=:lang) ");
-		qs.append("and (povvpovd is null or povvpovd.language.code=:lang) ");
-		qs.append("and (pinstapdesc is null or pinstapdesc.language.code=:lang) ");
 		qs.append("order by p.sortOrder asc");
 
-		Query q = this.em.createQuery(qs.toString());
+		Query q = withProductListingTimeout(this.em.createQuery(qs.toString()));
 		q.setParameter("pId", pageProductIds);
 		q.setParameter("lang", language.getCode());
 
@@ -1215,6 +1194,12 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
 		products.sort((left, right) -> Integer.compare(ordering.get(left.getId()), ordering.get(right.getId())));
 
 		return products;
+	}
+
+	private Query withProductListingTimeout(Query query) {
+		query.setHint("javax.persistence.query.timeout", PRODUCT_LISTING_QUERY_TIMEOUT_MS);
+		query.setHint("org.hibernate.timeout", PRODUCT_LISTING_QUERY_TIMEOUT_SECONDS);
+		return query;
 	}
 
 	@Override

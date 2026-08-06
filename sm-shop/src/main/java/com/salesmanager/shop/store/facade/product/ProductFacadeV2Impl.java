@@ -30,6 +30,7 @@ import com.salesmanager.core.model.catalog.product.variant.ProductVariant;
 import com.salesmanager.core.model.merchant.MerchantStore;
 import com.salesmanager.core.model.reference.language.Language;
 import com.salesmanager.shop.mapper.catalog.product.ReadableProductMapper;
+import com.salesmanager.shop.mapper.catalog.product.ReadableProductSummaryMapper;
 import com.salesmanager.shop.mapper.catalog.product.ReadableProductVariantMapper;
 import com.salesmanager.shop.model.catalog.product.ReadableProduct;
 import com.salesmanager.shop.model.catalog.product.ReadableProductList;
@@ -58,6 +59,9 @@ public class ProductFacadeV2Impl implements ProductFacade {
 	
 	@Autowired
 	private ReadableProductMapper readableProductMapper;
+
+	@Autowired
+	private ReadableProductSummaryMapper readableProductSummaryMapper;
 	
 	@Autowired
 	private ProductVariantService productVariantService;
@@ -193,7 +197,7 @@ public class ProductFacadeV2Impl implements ProductFacade {
 		 * ReadableProductMapper
 		 */
 		
-		List<ReadableProduct> readableProducts = products.stream().map(p -> readableProductMapper.convert(p, store, language))
+		List<ReadableProduct> readableProducts = products.stream().map(p -> readableProductSummaryMapper.convert(p, store, language))
 				.collect(Collectors.toList());
 
 
