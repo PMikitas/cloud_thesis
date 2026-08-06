@@ -196,6 +196,21 @@ def config_bool(name: str, default: bool, *value_maps: dict[str, str]) -> bool:
     return value.strip().lower() not in {"false", "0", "no", "off"}
 
 
+def escape_snowflake_string(value: str) -> str:
+    return value.replace("'", "''")
+
+
+def snowflake_query_tag(mode: str) -> str:
+    configured = config_value("METRICS_SNOWFLAKE_QUERY_TAG", METRICS_ENV_VALUES)
+    if configured:
+        return configured
+
+    normalized_mode = re.sub(r"[^A-Za-z0-9_.:-]+", "_", mode.strip()).strip("_")
+    if not normalized_mode:
+        normalized_mode = "metrics"
+    return f"shopizer_metrics:snowflake:{normalized_mode}"
+
+
 def snowflake_account_from_url(url_value: str) -> str | None:
     if not url_value:
         return None
@@ -432,7 +447,7 @@ def resolve_snowflake_private_key(
     raise RuntimeError("Snowflake private key not found in properties, .env, or environment")
 
 
-def build_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
+def build_snowflake_connection(query_tag: str | None = None) -> snowflake.connector.SnowflakeConnection:
     property_values = load_key_value_file(SNOWFLAKE_PROPERTIES)
     env_values = load_key_value_file(MIGRATION_ENV)
     url_value = property_values.get("snowflake.url", "")
@@ -483,6 +498,10 @@ def build_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
     )
     with connection.cursor() as cursor:
         cursor.execute(f"USE WAREHOUSE {safe_identifier(warehouse, 'Snowflake warehouse')}")
+        resolved_query_tag = query_tag or snowflake_query_tag("metadata")
+        cursor.execute(
+            f"ALTER SESSION SET QUERY_TAG = '{escape_snowflake_string(resolved_query_tag)}'"
+        )
     return connection
 
 
@@ -574,7 +593,10 @@ def build_snowflake_raw_events_sql(sql: str) -> str:
 
 
 def fetch_snowflake_raw_events_dataframe(sql: str) -> QueryExecutionResult:
-    result = fetch_snowflake_dataframe(build_snowflake_raw_events_sql(sql))
+    result = fetch_snowflake_dataframe(
+        build_snowflake_raw_events_sql(sql),
+        query_tag=snowflake_query_tag("raw_operational_events"),
+    )
     return QueryExecutionResult(
         dataframe=result.dataframe,
         data_volume_bytes=result.data_volume_bytes,
@@ -868,8 +890,9 @@ def fetch_snowflake_query_volume(
     return None, None
 
 
-def fetch_snowflake_dataframe(sql: str) -> QueryExecutionResult:
-    connection = build_snowflake_connection()
+def fetch_snowflake_dataframe(sql: str, query_tag: str | None = None) -> QueryExecutionResult:
+    effective_query_tag = query_tag or snowflake_query_tag("metadata")
+    connection = build_snowflake_connection(query_tag=effective_query_tag)
     try:
         with connection.cursor() as cursor:
             cursor.execute(sql)
@@ -894,6 +917,9 @@ def fetch_snowflake_dataframe(sql: str) -> QueryExecutionResult:
         data_volume_bytes=data_volume_bytes,
         data_volume_source=data_volume_source,
         query_id=query_id,
+        extra_metadata={
+            "snowflake_query_tag": effective_query_tag,
+        },
     )
 
 
@@ -1348,7 +1374,10 @@ def execute_query_for_warehouse(warehouse: str, sql: str) -> QueryExecutionResul
     if warehouse == "snowflake":
         resolved_table = resolve_snowflake_event_table()
         normalized_sql = rewrite_relation_names(sql, warehouse)
-        result = fetch_snowflake_dataframe(apply_snowflake_event_table(normalized_sql, resolved_table))
+        result = fetch_snowflake_dataframe(
+            apply_snowflake_event_table(normalized_sql, resolved_table),
+            query_tag=snowflake_query_tag("operational_tables"),
+        )
         return QueryExecutionResult(
             dataframe=result.dataframe,
             data_volume_bytes=result.data_volume_bytes,
@@ -1448,7 +1477,10 @@ def fetch_latest_data_used_timestamp(warehouse: str) -> datetime | None:
 
 
 def fetch_snowflake_raw_events_latest_data_used_timestamp() -> datetime | None:
-    freshness_df = fetch_snowflake_dataframe(build_snowflake_raw_events_latest_data_timestamp_sql()).dataframe
+    freshness_df = fetch_snowflake_dataframe(
+        build_snowflake_raw_events_latest_data_timestamp_sql(),
+        query_tag=snowflake_query_tag("raw_operational_events_metadata"),
+    ).dataframe
     if freshness_df.empty or freshness_df.shape[1] == 0:
         return None
     return normalize_timestamp_value(freshness_df.iloc[0, 0])
@@ -1719,7 +1751,10 @@ def run_group(
                     warehouse=warehouse,
                     sql=build_snowflake_raw_events_sql(definition.sql),
                 )
-                raw_execution_result = fetch_snowflake_dataframe(raw_definition.sql)
+                raw_execution_result = fetch_snowflake_dataframe(
+                    raw_definition.sql,
+                    query_tag=snowflake_query_tag("raw_operational_events"),
+                )
                 duration_seconds = perf_counter() - started
                 calculated_at_utc = datetime.now(UTC)
                 latest_data_used_at_utc = fetch_snowflake_raw_events_latest_data_used_timestamp()
@@ -1778,7 +1813,10 @@ def run_group(
                     sql=build_snowflake_raw_events_sql(definition.sql),
                 )
                 raw_started = perf_counter()
-                raw_execution_result = fetch_snowflake_dataframe(raw_definition.sql)
+                raw_execution_result = fetch_snowflake_dataframe(
+                    raw_definition.sql,
+                    query_tag=snowflake_query_tag("raw_operational_events"),
+                )
                 raw_duration_seconds = perf_counter() - raw_started
                 raw_calculated_at_utc = datetime.now(UTC)
                 raw_latest_data_used_at_utc = fetch_snowflake_raw_events_latest_data_used_timestamp()
