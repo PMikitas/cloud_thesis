@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -1284,6 +1285,7 @@ def fetch_redshift_dataframe(sql: str) -> QueryExecutionResult:
     )
     connect_attempts = env_int("METRICS_REDSHIFT_CONNECT_ATTEMPTS", 3)
     retry_delay_seconds = env_float("METRICS_REDSHIFT_RETRY_DELAY_SECONDS", 5.0)
+    query_group = os.environ.get("METRICS_REDSHIFT_QUERY_GROUP", "analytics").strip()
     disable_result_cache = os.environ.get("METRICS_REDSHIFT_DISABLE_RESULT_CACHE", "true").strip().lower() in {
         "1",
         "true",
@@ -1303,6 +1305,8 @@ def fetch_redshift_dataframe(sql: str) -> QueryExecutionResult:
                 connect_timeout=connect_timeout,
             ) as conn:
                 with conn.cursor() as cursor:
+                    if query_group:
+                        cursor.execute("SET query_group TO %s", (query_group,))
                     if disable_result_cache:
                         cursor.execute("SET enable_result_cache_for_session TO off")
                     cursor.execute(sql)
@@ -1720,6 +1724,20 @@ def parse_legacy_query_definitions(sql_file: Path) -> dict[tuple[int, str], Quer
             logger.info("Skipping empty legacy metrics section: q%02d %s", resolved_query_id, current_heading)
         else:
             warehouse = infer_warehouse_from_sql(sql)
+            key = (resolved_query_id, warehouse)
+            if key in definitions:
+                logger.warning(
+                    "Skipping duplicate legacy metrics section for q%02d warehouse=%s "
+                    "heading=%r; keeping the first definition from heading=%r",
+                    resolved_query_id,
+                    warehouse,
+                    current_heading,
+                    definitions[key].slug,
+                )
+                current_heading = None
+                current_query_id = None
+                current_lines = []
+                return
             definitions[(resolved_query_id, warehouse)] = QueryDefinition(
                 query_id=resolved_query_id,
                 slug=QUERY_CATALOG.get(resolved_query_id, slugify(current_heading)),
@@ -2044,6 +2062,8 @@ def write_result_files(
         "warehouse_query_id": execution_result.query_id,
         "warehouse_result_cache_hit": execution_result.result_cache_hit,
         "warehouse_returned_bytes": execution_result.returned_bytes,
+        "sql_sha256": hashlib.sha256(definition.sql.encode("utf-8")).hexdigest(),
+        "sql_preview": " ".join(definition.sql.split())[:1000],
         "csv_path": str(csv_path),
     }
     if execution_result.extra_metadata:
