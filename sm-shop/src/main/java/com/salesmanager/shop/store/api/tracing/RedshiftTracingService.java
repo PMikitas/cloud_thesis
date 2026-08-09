@@ -84,6 +84,9 @@ public class RedshiftTracingService {
     @Value("${redshift.driver.tcp.keepalive:true}")
     private boolean driverTcpKeepAlive;
 
+    @Value("${redshift.query.group:event_ingest}")
+    private String queryGroup;
+
     @Value("${redshift.executor.threads:1}")
     private int executorThreads;
 
@@ -138,10 +141,11 @@ public class RedshiftTracingService {
                 );
             }
             LOGGER.info(
-                    "Initializing Redshift tracing for {}.{} via {} (poolSize={}, workers={}, batchSize={}, statementRows={}, commitEveryFlushes={}, flushIntervalMs={}, queueCapacity={})",
+                    "Initializing Redshift tracing for {}.{} via {} (queryGroup={}, poolSize={}, workers={}, batchSize={}, statementRows={}, commitEveryFlushes={}, flushIntervalMs={}, queueCapacity={})",
                     schema,
                     table,
                     maskJdbcUrl(jdbcUrl),
+                    queryGroup,
                     poolSize,
                     executorThreads,
                     batchSize,
@@ -291,6 +295,7 @@ public class RedshiftTracingService {
         }
         try {
             Connection connection = dataSource.getConnection();
+            applyQueryGroup(connection);
             return new RedshiftSession(connection);
         } catch (SQLException e) {
             LOGGER.error(
@@ -303,6 +308,20 @@ public class RedshiftTracingService {
             );
             return null;
         }
+    }
+
+    private void applyQueryGroup(Connection connection) throws SQLException {
+        String trimmed = queryGroup == null ? "" : queryGroup.trim();
+        if (trimmed.isEmpty()) {
+            return;
+        }
+        try (PreparedStatement statement = connection.prepareStatement("set query_group to " + sqlLiteral(trimmed))) {
+            statement.execute();
+        }
+    }
+
+    private String sqlLiteral(String value) {
+        return "'" + value.replace("'", "''") + "'";
     }
 
     private void flushBatch(List<ApiTraceEvent> batch, RedshiftSession session) throws SQLException {
