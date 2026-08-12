@@ -18,6 +18,7 @@ redshift.driver.connect.timeout.seconds=5
 redshift.driver.login.timeout.seconds=15
 redshift.driver.socket.timeout.seconds=30
 redshift.driver.tcp.keepalive=true
+redshift.query.group=event_ingest
 redshift.executor.threads=1
 redshift.batch.size=100
 redshift.multirow.insert.rows=500

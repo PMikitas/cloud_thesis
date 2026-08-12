@@ -41,7 +41,7 @@ The bridge therefore uses:
 - `RS_SCHEMA=performance_tracking`
 - `MIGRATION_WRITE_DISPOSITION=merge` for normal incremental runs
 - `MIGRATION_RESET_PIPELINE_STATE=false` so incremental cursor state is preserved
-- `MIGRATION_DROP_DESTINATION_TABLES_ON_REPLACE=true` so full replace runs clear stale BigQuery schemas
+- `MIGRATION_DROP_DESTINATION_TABLES_ON_REPLACE=true` so full replace runs clear stale BigQuery/Snowflake schemas
 
 BigQuery still defaults to `BQ_DATASET` or `MIGRATION_NAMESPACE`. Snowflake uses
 the same `performance_tracking` schema as the API tracing table
@@ -56,6 +56,8 @@ Important variables:
 - `MYSQL_DSN`
 - `TRACING_ENABLED_MIGRATIONS` and `TRACING_MIGRATIONS_CLOUD_SOLUTIONS` in
   `../tracing.env`
+- `MIGRATION_DESTINATIONS`, optional comma-separated migration-only override,
+  for example `snowflake`
 - `MIGRATION_NAMESPACE`
 - `MIGRATION_WRITE_DISPOSITION`
 - `MIGRATION_INCREMENTAL_ENABLED`
@@ -101,6 +103,12 @@ Cron-style runner:
 docker compose up --build migration-cron
 ```
 
+Cron-style runner for only one destination:
+
+```bash
+MIGRATION_DESTINATIONS=snowflake docker compose up --build -d --force-recreate migration-cron
+```
+
 Python scheduler runner:
 
 ```bash
@@ -120,12 +128,12 @@ docker compose --profile python-only up --build migration-scheduler
   full source tables again.
 - For a deliberate full rebuild, temporarily set
   `MIGRATION_WRITE_DISPOSITION=replace` and `MIGRATION_RESET_PIPELINE_STATE=true`.
-- For BigQuery full refreshes, the bridge drops the managed destination tables
-  first by default. This avoids stale schema problems when MySQL `BIT` columns
-  change from inferred integers to explicit booleans. The drop is only evaluated
-  for `MIGRATION_WRITE_DISPOSITION=replace`; normal incremental `merge` runs do
-  not drop tables.
-- If you explicitly want to keep existing BigQuery tables during a replace run,
+- For BigQuery and Snowflake full refreshes, the bridge drops the managed
+  destination tables first by default. This avoids stale schema problems when
+  MySQL `BIT` columns change from inferred integers to explicit booleans. The
+  drop is only evaluated for `MIGRATION_WRITE_DISPOSITION=replace`; normal
+  incremental `merge` runs do not drop tables.
+- If you explicitly want to keep existing destination tables during a replace run,
   set `MIGRATION_DROP_DESTINATION_TABLES_ON_REPLACE=false`.
 - Destination failures are isolated and summarized after the run instead of
   silently stopping at the first warehouse.

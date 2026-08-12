@@ -146,6 +146,67 @@ Run only one warehouse for a quick test:
 docker compose run --rm metrics-cron run-once --group operational_dashboard --warehouses redshift
 ```
 
+## Snowflake Raw Operational Event Comparison
+
+Snowflake can now run a second metrics path that reconstructs operational
+tables from immutable rows in `PERFORMANCE_TRACKING.OPERATIONAL_EVENTS`.
+The scheduler keeps the normal Snowflake path as the baseline, then runs the
+raw-event variant and writes a comparison report.
+
+The raw-event state script is
+[`snowflake_raw_event_state.sql`](snowflake_raw_event_state.sql). It builds
+table-shaped CTEs such as `shopping_cart`, `shopping_cart_item`,
+`product_availability`, and `product_price` from the latest non-delete event per
+`(table_name, entity_id)`. Existing metric SQL is reused; only the Snowflake
+operational table references are redirected to those CTEs.
+
+When raw-event mode is enabled, the scheduler also performs an immutable
+baseline preflight. It checks whether static/reference MySQL tables such as
+`PRODUCT`, `PRODUCT_DESCRIPTION`, `PRODUCT_AVAILABILITY`, and `PRODUCT_PRICE`
+are already represented in Snowflake `OPERATIONAL_EVENTS`; missing baselines are
+queued into `OPERATIONAL_EVENT_OUTBOX` and then streamed by `sm-shop`.
+This prevents revenue metrics from running with an empty `product_price` state.
+Set `METRICS_IMMUTABLE_BACKFILL_ENABLED=false` to disable the preflight, or
+`METRICS_IMMUTABLE_BACKFILL_FORCE=true` to queue the baseline again after
+intentionally wiping Snowflake while keeping MySQL.
+
+Run a one-off comparison for Snowflake:
+
+```bash
+docker compose run --rm metrics-cron run-once \
+  --group business_dashboard \
+  --warehouses snowflake \
+  --snowflake-raw-events-compare
+```
+
+Run Snowflake from raw events only:
+
+```bash
+METRICS_SNOWFLAKE_RAW_EVENTS_ONLY=true \
+docker compose run --rm metrics-cron run-once \
+  --group business_dashboard \
+  --warehouses snowflake
+```
+
+Outputs are written under:
+
+```text
+metrics-scheduler/results/snowflake/<group>/...
+metrics-scheduler/results/snowflake_raw_events/<group>/...
+metrics-scheduler/results/snowflake_raw_events_comparison/<group>/...
+```
+
+By default, the command fails if a baseline and raw-event result differ. To keep
+collecting reports without failing the process:
+
+```bash
+docker compose run --rm metrics-cron run-once \
+  --group business_dashboard \
+  --warehouses snowflake \
+  --snowflake-raw-events-compare \
+  --no-snowflake-raw-events-fail-on-mismatch
+```
+
 ## Redshift reliability knobs
 
 The scheduler can use its own Redshift connection settings, separate from the
