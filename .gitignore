@@ -108,7 +108,3 @@ metrics-scheduler/*.zip
 shopizer-gatling/results/
 shopizer-gatling/results_*.zip
 shopizer-gatling/*results*.zip
-
-# Local assistant/editor state
-.claude/
-**/.claude/
